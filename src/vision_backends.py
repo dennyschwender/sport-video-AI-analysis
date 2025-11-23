@@ -10,7 +10,7 @@ from pathlib import Path
 class VisionBackendMixin:
     """Mixin class providing video frame analysis capabilities."""
     
-    def analyze_video_frames(self, video_path: str, instructions: str, sport: str = "floorball", progress_callback=None) -> Dict[str, Any]:
+    def analyze_video_frames(self, video_path: str, instructions: str, sport: str = "floorball", progress_callback=None, config=None, is_cancelled_callback=None) -> Dict[str, Any]:
         """Analyze video by extracting frames and using vision model.
         
         Args:
@@ -18,10 +18,24 @@ class VisionBackendMixin:
             instructions: What events to find (e.g., "Find all goals and penalties")
             sport: Sport type for context
             progress_callback: Optional callback function(message: str) for progress updates
+            config: Optional AppConfig object with rate limit settings
+            is_cancelled_callback: Optional callback function() -> bool to check if analysis should stop
         
         Returns:
             Dictionary with events, meta information
         """
+        # Get rate limit settings from config or use defaults
+        max_workers_openai = 2
+        max_workers_gemini = 4
+        rate_limit_retry_delay = 40.0
+        rate_limit_max_retries = 3
+        
+        if config:
+            max_workers_openai = getattr(config, 'max_workers_openai', 2)
+            max_workers_gemini = getattr(config, 'max_workers_gemini', 4)
+            rate_limit_retry_delay = getattr(config, 'rate_limit_retry_delay', 40.0)
+            rate_limit_max_retries = getattr(config, 'rate_limit_max_retries', 3)
+        
         from src.video_tools import extract_frames, encode_image_base64, get_video_duration
         from src.config_manager import SPORT_PRESETS
         
@@ -93,19 +107,37 @@ class VisionBackendMixin:
                 # Process chunks in parallel with ThreadPoolExecutor
                 all_events = []
                 completed = 0
-                max_workers = min(4, len(chunk_tasks))  # Max 4 parallel API calls
+                # Use configured max_workers based on backend type
+                is_openai = hasattr(self, 'client') and 'openai' in str(type(self.client).__module__)
+                max_workers = max_workers_openai if is_openai else min(max_workers_gemini, len(chunk_tasks))
                 
                 def process_chunk(task):
-                    """Process a single chunk and return events."""
-                    chunk_events = self._analyze_frames_impl(
-                        frames=task['chunk_frames'],
-                        instructions=instructions,
-                        sport=sport,
-                        frame_interval=actual_frame_interval,
-                        max_frames=len(task['chunk_frames']),
-                        time_offset=task['chunk_start_time']
-                    )
-                    return task, chunk_events
+                    """Process a single chunk and return events with retry on rate limit."""
+                    import time
+                    
+                    for attempt in range(rate_limit_max_retries):
+                        try:
+                            chunk_events = self._analyze_frames_impl(
+                                frames=task['chunk_frames'],
+                                instructions=instructions,
+                                sport=sport,
+                                frame_interval=actual_frame_interval,
+                                max_frames=len(task['chunk_frames']),
+                                time_offset=task['chunk_start_time']
+                            )
+                            return task, chunk_events
+                        except Exception as e:
+                            error_str = str(e)
+                            # Check if it's a rate limit error
+                            if '429' in error_str or 'rate_limit' in error_str.lower():
+                                if attempt < rate_limit_max_retries - 1:
+                                    print(f"  ⏳ Rate limit hit on chunk {task['chunk_num']}, waiting {rate_limit_retry_delay}s...")
+                                    time.sleep(rate_limit_retry_delay)
+                                    continue
+                            # Re-raise if not rate limit or last attempt
+                            raise
+                    
+                    return task, []  # Return empty if all retries failed
                 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     # Submit all tasks
@@ -113,16 +145,49 @@ class VisionBackendMixin:
                     
                     # Process results as they complete
                     for future in as_completed(future_to_task):
-                        task, chunk_events = future.result()
-                        completed += 1
+                        # Check for cancellation
+                        if is_cancelled_callback and is_cancelled_callback():
+                            logger.info(f"Cancellation detected. Processed {completed}/{len(chunk_tasks)} chunks")
+                            print(f"  ⛔ Analysis stopped by user. Processed {completed}/{len(chunk_tasks)} chunks")
+                            if progress_callback:
+                                progress_callback(f"Stopped - Processed {completed}/{len(chunk_tasks)} chunks")
+                            
+                            # Cancel remaining futures
+                            for f in future_to_task:
+                                if not f.done():
+                                    f.cancel()
+                            
+                            # Process events we have so far
+                            events = self._deduplicate_events(all_events, tolerance_seconds=5.0)
+                            
+                            return {
+                                "events": events,
+                                "meta": {
+                                    "processing_ms": int((time.time() - start) * 1000),
+                                    "cancelled": True,
+                                    "chunks_completed": completed,
+                                    "total_chunks": len(chunk_tasks),
+                                    "raw_events": len(all_events),
+                                    "deduped_events": len(events)
+                                }
+                            }
                         
-                        msg = f"Chunk {completed}/{len(chunk_tasks)}: {task['chunk_start_time']:.0f}s-{task['chunk_end_time']:.0f}s → {len(chunk_events)} events"
-                        print(f"  ✓ {msg}")
-                        logger.info(f"Chunk {task['chunk_num']} complete: Found {len(chunk_events)} events")
-                        if progress_callback:
-                            progress_callback(msg)
-                        
-                        all_events.extend(chunk_events)
+                        try:
+                            task, chunk_events = future.result()
+                            completed += 1
+                            
+                            msg = f"Chunk {completed}/{len(chunk_tasks)}: {task['chunk_start_time']:.0f}s-{task['chunk_end_time']:.0f}s → {len(chunk_events)} events"
+                            print(f"  ✓ {msg}")
+                            logger.info(f"Chunk {task['chunk_num']} complete: Found {len(chunk_events)} events")
+                            if progress_callback:
+                                progress_callback(msg)
+                            
+                            all_events.extend(chunk_events)
+                        except Exception as e:
+                            # Log error but continue with other chunks
+                            print(f"  ✗ Chunk {future_to_task[future]['chunk_num']} failed: {str(e)[:100]}")
+                            logger.error(f"Chunk {future_to_task[future]['chunk_num']} failed: {e}")
+                            completed += 1
                 
                 # Remove duplicate events (from overlapping chunks)
                 events = self._deduplicate_events(all_events, tolerance_seconds=5.0)

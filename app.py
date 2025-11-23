@@ -35,6 +35,7 @@ logger = Logger.get_logger()
 
 # Progress tracking
 progress_queues = {}
+cancelled_tasks = {}  # Track cancelled tasks
 
 
 def create_progress_queue(task_id):
@@ -86,6 +87,14 @@ def health():
         })
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
+
+@app.route('/api/analyze/stop/<task_id>', methods=['POST'])
+def analyze_stop(task_id):
+    """Stop an in-progress analysis and return partial results."""
+    cancelled_tasks[task_id] = True
+    logger.info(f"Analysis stop requested for task {task_id}")
+    return jsonify({'success': True, 'message': 'Stop signal sent'})
 
 
 
@@ -165,13 +174,22 @@ def analyze_start():
                     # Send chunk progress as step 4 updates
                     send_progress(task_id, 4, 5, message)
                 
-                result = vision_backend.analyze_video_frames(video_path, instructions, sport, progress_callback=chunk_progress)
+                # Define cancellation checker
+                def is_cancelled():
+                    return cancelled_tasks.get(task_id, False)
+                
+                result = vision_backend.analyze_video_frames(video_path, instructions, sport, progress_callback=chunk_progress, config=config, is_cancelled_callback=is_cancelled)
                 
                 events = result.get('events', [])
                 meta = result.get('meta', {})
-                logger.info(f"Analysis complete. Found {len(events)} events")
+                was_cancelled = meta.get('cancelled', False)
                 
-                if len(events) == 0:
+                if was_cancelled:
+                    logger.info(f"Analysis stopped by user. Processed {meta.get('chunks_completed', 0)}/{meta.get('total_chunks', 0)} chunks. Found {len(events)} events")
+                else:
+                    logger.info(f"Analysis complete. Found {len(events)} events")
+                
+                if len(events) == 0 and not was_cancelled:
                     logger.warning("WARNING: No events detected in video!")
                     logger.warning(f"Instructions were: {instructions}")
                     logger.warning("Consider: 1) Adjusting instructions, 2) Checking video quality, 3) Trying different backend")
@@ -190,8 +208,9 @@ def analyze_start():
                     clips = prepare_clips(events, video_path, clips_dir)
                 
                 # Send completion
-                send_progress(task_id, 5, 5, 'Complete!')
-                logger.info(f"=== Analysis complete for task {task_id} ===")
+                completion_msg = 'Stopped - Partial Results' if was_cancelled else 'Complete!'
+                send_progress(task_id, 5, 5, completion_msg)
+                logger.info(f"=== Analysis {'stopped' if was_cancelled else 'complete'} for task {task_id} ===")
                 logger.info(f"Total events: {len(events)}")
                 logger.info(f"Processing time: {meta.get('processing_ms', 0)}ms")
                 logger.info(f"Cost: ${meta.get('cost_usd', 0):.6f}")
@@ -205,9 +224,14 @@ def analyze_start():
                         'clips': [os.path.basename(c) for c in clips],
                         'timestamps': [e.get('timestamp', 0) for e in events],
                         'meta': meta,
-                        'cache_hit': False
+                        'cache_hit': False,
+                        'cancelled': was_cancelled
                     }
                 })
+                
+                # Clean up cancellation flag
+                if task_id in cancelled_tasks:
+                    del cancelled_tasks[task_id]
                 
             except Exception as e:
                 error_message = str(e)

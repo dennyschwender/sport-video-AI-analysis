@@ -13,7 +13,7 @@
 - **Parallel chunk analysis** (4x faster for long videos)
 - Automatic event detection with timestamps
 - On-demand clip generation with download links
-- **Interactive stop button** to cancel analysis
+- **Interactive stop button** to cancel analysis and **keep partial results** from processed chunks
 
 🤖 **Multiple Vision Backends**
 - **OpenAI GPT-4o Vision** - High accuracy video frame analysis
@@ -401,12 +401,14 @@ All 38 tests passing ✅
      3. Extracting video frames
      4. Analyzing video with AI
         - For long videos (>400s), see chunk progress: "Processing chunk 5/44: 200s-400s → 3 events"
-        - Parallel processing (4 chunks at once) for 4x speedup
+        - Parallel processing (2-4 chunks at once) for 4x speedup
      5. Complete! Events detected
-   - **Stop analysis anytime** with ⛔ Stop button
+   - **Stop analysis anytime** with ⛔ Stop button - **keeps partial results from processed chunks!**
 
 6. **View Results:**
    - See detected events in table with timestamps
+   - If stopped early, see notice: "Analysis Stopped - Showing partial results from 28/44 chunks"
+   - **Partial results still usable**: Generate clips and create highlight reels from detected events
    - Click "Generate Clips" to create individual video clips
    
 7. **Create Highlight Reel:**
@@ -414,17 +416,42 @@ All 38 tests passing ✅
    - Click "🎬 Create Highlight Reel"
    - Download the compiled `highlight_reel_*.mp4` file
 
+### Stop Button with Partial Results
+
+**Problem:** Long video analysis takes 4-5 minutes. If you stop at 3 minutes, you lose all progress.
+
+**Solution:** Stop button now preserves work:
+- Click ⛔ Stop button anytime during analysis
+- **All completed chunks are saved** (e.g., 28 out of 44 chunks)
+- Results show: "Analysis Stopped - Partial results from 28/44 chunks"
+- Events detected so far are fully usable
+- Generate clips and highlight reels from partial results
+- No wasted API calls or processing time
+
+**Example Scenario:**
+```
+2.4-hour game starts processing (44 chunks total)
+✓ Chunks 1-28 complete: 23 events detected
+User clicks Stop at chunk 29
+⛔ Analysis stopped - 23 events saved
+✓ Generate clips from 23 events
+✓ Create highlight reel from first ~60 minutes of game
+✓ Saved ~2 minutes of processing time
+✓ Saved API costs for remaining 16 chunks
+```
+
 ### Long Video Analysis (Full Games)
 
 For videos over ~7 minutes, the system automatically:
 - **Splits into chunks** (25 frames each with 50% overlap)
-- **Processes chunks in parallel** (4 at a time)
+- **Processes chunks in parallel** (configurable workers per backend)
 - **Shows chunk progress** in real-time
 - **Deduplicates events** from overlapping regions
+- **Handles rate limits** automatically with retry logic
 
 **Example:** 2.4-hour game (8765 seconds)
 - Splits into ~44 chunks
-- Processes 4 chunks concurrently
+- Processes 2-4 chunks concurrently (depending on backend)
 - Completes in ~4-5 minutes (vs 15-20 minutes sequential)
 - Detects events throughout entire game without missing action
 
@@ -436,6 +463,31 @@ Long video detected (8765.1s). Processing 44 chunks in parallel...
 ...
 Parallel processing complete: 127 raw events → 89 unique events
 ```
+
+#### Rate Limit Configuration
+
+The system includes automatic rate limit handling to respect API provider limits. Configure in `config.yaml`:
+
+```yaml
+# OpenAI Rate Limits (30,000 TPM for gpt-4o, 500,000 TPM for gpt-4o-mini)
+max_workers_openai: 2  # Use 1-2 for gpt-4o, 3-4 for gpt-4o-mini
+
+# Gemini Rate Limits (15 RPM free tier, higher for paid)
+max_workers_gemini: 4  # Use 4-6 for paid tier, 2 for free tier
+
+# Retry settings for 429 (Rate Limit) errors
+rate_limit_retry_delay: 40.0  # Seconds to wait before retry
+rate_limit_max_retries: 3     # Max retry attempts per chunk
+```
+
+**Check your rate limits:**
+- **OpenAI:** https://platform.openai.com/settings/organization/limits
+- **Gemini:** https://ai.google.dev/pricing
+
+**Adjust based on your API tier:**
+- Higher TPM/RPM → Use more workers for faster processing
+- Lower TPM/RPM → Use fewer workers to avoid 429 errors
+- If you hit rate limits, the system will automatically retry with exponential backoff
      3. Frames extracted
      4. AI analysis
      5. Complete

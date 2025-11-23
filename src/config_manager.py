@@ -98,7 +98,17 @@ class AppConfig:
     parallel_processing: bool = False
     max_workers: int = 4
     
-    # Retry settings
+    # Rate limit settings (for chunk parallel processing)
+    # OpenAI has lower rate limits (30K TPM for gpt-4o), use fewer workers
+    max_workers_openai: int = 2
+    # Gemini has higher rate limits, can handle more workers
+    max_workers_gemini: int = 4
+    # Delay between retries when hitting rate limits (seconds)
+    rate_limit_retry_delay: float = 40.0
+    # Maximum retries for rate-limited requests
+    rate_limit_max_retries: int = 3
+    
+    # Retry settings (general API errors)
     max_retries: int = 3
     retry_delay: float = 1.0
     timeout: float = 60.0

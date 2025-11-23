@@ -56,7 +56,33 @@ parallel_processing: false
 max_workers: 4
 
 # ============================================================
-# Retry & Timeout Settings
+# Rate Limit Settings (for chunk parallel processing)
+# ============================================================
+# These settings control how many parallel workers process video chunks
+# and how to handle API rate limit errors (HTTP 429)
+
+# OpenAI Rate Limits:
+# - gpt-4o: 30,000 TPM / 500 RPM (Tokens/Requests Per Minute)
+# - gpt-4o-mini: 500,000 TPM / 500 RPM
+# Recommendation: Use 1-2 workers for gpt-4o, 3-4 for gpt-4o-mini
+max_workers_openai: 2
+
+# Gemini Rate Limits:
+# - Free tier: 15 RPM (requests per minute)
+# - Pay-as-you-go: Higher limits, varies by model
+# Recommendation: Use 4-6 workers for paid tier, 2 for free tier
+max_workers_gemini: 4
+
+# How long to wait when hitting rate limits (seconds)
+# OpenAI typically suggests waiting 30-60s after 429 error
+rate_limit_retry_delay: 40.0
+
+# Maximum retry attempts for rate-limited requests
+# After this many retries, the chunk will be skipped
+rate_limit_max_retries: 3
+
+# ============================================================
+# Retry & Timeout Settings (general API errors)
 # ============================================================
 
 max_retries: 3

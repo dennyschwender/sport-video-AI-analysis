@@ -137,13 +137,106 @@ AI-powered sports video analysis platform that:
 - **Memory leak prevention** (EventSource.close())
 - Stop message in progress log
 
-### Phase 24: **GitHub Preparation** ✅ (CURRENT)
+### Phase 24: **GitHub Preparation** ✅
 - Test coverage verification (38/38 passing)
 - README comprehensive update
 - Legacy code audit
 - Documentation consolidation
 - Implementation summary update
-- [x] Verify all tests pass: ✅ 35/35 tests passing
+- GitHub release checklist creation
+- MIT License added
+- Successfully pushed to GitHub (v1.0.0)
+
+### Phase 25: **Configurable Rate Limits** ✅
+**Problem:** OpenAI rate limit (429 error) hit during production use. Hardcoded values (2 workers, 40s retry) work but aren't optimal for all users.
+
+**Solution:** Made rate limits fully configurable:
+- Added `max_workers_openai` (default: 2) and `max_workers_gemini` (default: 4)
+- Added `rate_limit_retry_delay` (default: 40.0s) and `rate_limit_max_retries` (default: 3)
+- Updated `config_manager.py` AppConfig dataclass with rate limit fields
+- Updated `vision_backends.py` to accept config and use configurable values
+- Updated `app.py` to pass config to vision backend
+- Updated `config.yaml` and `config.yaml.example` with documentation
+- Added rate limit configuration section to README with provider-specific guidance
+
+**Files Modified:**
+- `src/config_manager.py` - Added rate limit fields to AppConfig
+- `src/vision_backends.py` - Updated to use config values instead of hardcoded
+- `app.py` - Pass config to analyze_video_frames()
+- `config.yaml` - Added rate limit settings with comments
+- `config.yaml.example` - Added rate limit documentation
+- `README.md` - Added "Rate Limit Configuration" section with provider links
+
+**Configuration Guide:**
+```yaml
+max_workers_openai: 2    # For gpt-4o (30K TPM), use 1-2 workers
+max_workers_gemini: 4    # For Gemini paid tier, use 4-6 workers
+rate_limit_retry_delay: 40.0  # Wait 40s on 429 error
+rate_limit_max_retries: 3     # Max retry attempts
+```
+
+**Benefits:**
+- Users can optimize for their specific API tier (free vs paid)
+- Higher tier users (gpt-4o-mini: 500K TPM) can use more workers
+- Lower tier users avoid hitting rate limits proactively
+- Enterprise-grade configuration management
+- All tests still passing (38/38) ✅
+
+### Phase 26: **Stop with Partial Results** ✅ (CURRENT)
+**Problem:** When users stop an in-progress analysis, all work is discarded. For long videos with 44+ chunks taking 4-5 minutes, stopping at chunk 30 loses all detected events.
+
+**Solution:** Implemented graceful cancellation with partial results:
+- Added `cancelled_tasks` dictionary to track stop requests
+- Added `/api/analyze/stop/<task_id>` endpoint that marks task as cancelled
+- Updated `vision_backends.py` to accept `is_cancelled_callback` parameter
+- Added cancellation check between chunk completions
+- Cancels remaining futures when stop detected
+- Returns partial results with deduplication applied
+- Generates clips from partial events
+
+**Files Modified:**
+- `app.py`:
+  - Added `cancelled_tasks` tracking dictionary
+  - Added `/api/analyze/stop/<task_id>` POST endpoint
+  - Pass `is_cancelled_callback` to vision backend
+  - Handle `cancelled` flag in meta and log partial results
+  - Clean up cancellation flag after completion
+  
+- `src/vision_backends.py`:
+  - Added `is_cancelled_callback` parameter to `analyze_video_frames()`
+  - Check cancellation status after each chunk completes
+  - Cancel remaining futures when stopped
+  - Return partial results with metadata:
+    * `cancelled: True`
+    * `chunks_completed: X`
+    * `total_chunks: Y`
+    * `raw_events` and `deduped_events` counts
+  
+- `templates/index.html`:
+  - Updated `stopAnalysis()` to call `/api/analyze/stop/<task_id>` endpoint
+  - Display cancellation notice with chunk progress
+  - Show "Events Found (Partial)" label
+  - Allow clip generation from partial results
+
+**User Experience:**
+```
+User starts analysis: 44 chunks total
+Chunk 1-28: ✓ Processed (23 events found)
+Chunk 29: ✓ Processing...
+User clicks Stop button
+⛔ Analysis stopped by user. Processed 29/44 chunks
+Results: 23 events detected (partial)
+✓ Can generate clips from 23 events
+✓ Can create highlight reel from partial results
+```
+
+**Benefits:**
+- **Time saved:** Get results from 30/44 chunks (~3min work) instead of restarting
+- **Cost saved:** Don't waste API calls on already-processed chunks
+- **Better UX:** See what was found so far, decide if need full analysis
+- **Graceful shutdown:** Cancels remaining work cleanly
+- **No data loss:** All completed chunks preserved with deduplication
+- All tests still passing (38/38) ✅
 
 #### Phase 10: Environment Variable Management ✅
 - [x] Add python-dotenv to requirements.txt
