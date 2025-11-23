@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floorball LLM Analysis</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 { color: #1a1a1a; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
+        select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        select:disabled, textarea:disabled, textarea[readonly], input[type="file"]:disabled { background: #f5f5f5; color: #999; cursor: not-allowed; opacity: 0.6; }
+        textarea { font-family: monospace; }
+        button { background: #0066cc; color: white; border: none; padding: 12px 24px; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: 500; }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { padding: 12px; border-radius: 4px; margin-bottom: 20px; }
+        .status.info { background: #e3f2fd; color: #1976d2; }
+        .status.success { background: #e8f5e9; color: #2e7d32; }
+        .status.error { background: #ffebee; color: #c62828; }
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 20px; }
+        .metric { background: #f9f9f9; padding: 16px; border-radius: 6px; text-align: center; }
+        .metric-value { font-size: 24px; font-weight: bold; color: #0066cc; }
+        .metric-label { font-size: 12px; color: #666; margin-top: 4px; }
+        .events-table { width: 100%; border-collapse: collapse; }
+        .events-table th, .events-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        .events-table th { background: #f9f9f9; font-weight: 600; }
+        .event-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .event-goal { background: #4caf50; color: white; }
+        .event-shot { background: #2196f3; color: white; }
+        .event-penalty { background: #ff9800; color: white; }
+        .event-save { background: #9c27b0; color: white; }
+        .event-assist { background: #00bcd4; color: white; }
+        .hidden { display: none; }
+        .health-status { display: flex; align-items: center; gap: 8px; }
+        .health-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .health-dot.healthy { background: #4caf50; }
+        .health-dot.unhealthy { background: #f44336; }
+        .progress-container { margin-top: 16px; padding: 16px; background: #f9f9f9; border-radius: 6px; border: 1px solid #e0e0e0; }
+        .progress-bar-wrapper { width: 100%; height: 24px; background: #e0e0e0; border-radius: 12px; overflow: hidden; margin: 12px 0; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #0066cc, #0052a3); transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold; }
+        .progress-log { background: white; border: 1px solid #ddd; border-radius: 4px; padding: 12px; max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 13px; margin-top: 12px; }
+        .progress-log-entry { padding: 4px 0; color: #333; }
+        .progress-log-entry.current { color: #0066cc; font-weight: bold; }
+        .progress-step { color: #666; font-size: 14px; }
+        .stop-btn { background: #f44336; margin-top: 12px; }
+        .stop-btn:hover { background: #d32f2f; }
+        .stop-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .clips-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
+        .generate-clips-btn { background: #4caf50; margin-top: 12px; }
+        .generate-clips-btn:hover { background: #45a049; }
+        .clips-list { list-style: none; padding: 0; margin-top: 12px; }
+        .clips-list li { padding: 8px; background: #f9f9f9; margin-bottom: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .clip-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+        .clip-checkbox { width: 18px; height: 18px; cursor: pointer; }
+        .clip-download { color: #0066cc; text-decoration: none; font-size: 14px; white-space: nowrap; }
+        .clip-download:hover { text-decoration: underline; }
+        .clips-controls { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .select-all-btn { background: #666; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .select-all-btn:hover { background: #555; }
+        .highlight-reel-btn { background: #ff6b35; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .highlight-reel-btn:hover { background: #e55a2b; }
+        .highlight-reel-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .highlight-result { margin-top: 12px; padding: 12px; background: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; }
+        .highlight-result a { color: #2e7d32; font-weight: bold; text-decoration: none; }
+        .highlight-result a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏒 Floorball LLM Analysis</h1>
+        <p class="subtitle">AI-powered game analysis | <a href="/settings" style="color: #0066cc; text-decoration: none; font-weight: 500;">⚙️ Settings</a></p>
+        
+        <div id="healthStatus"></div>
+        
+        <div class="card">
+            <h2>🎥 Video Upload</h2>
+            <div class="form-group">
+                <label for="videoFile">Upload Game Video</label>
+                <input type="file" id="videoFile" accept="video/*">
+                <small style="color: #666; display: block; margin-top: 4px;">Supports MP4, MKV, AVI up to 5GB</small>
+            </div>
+            <div class="form-group">
+                <label for="instructions">📝 What to Find</label>
+                <textarea id="instructions" rows="3" placeholder="Examples:
+- Find all goals and assists
+- Find all ball losses and turnovers
+- Find all saves and penalty shots">Find all goals, all ball losses, all saves</textarea>
+                <small style="color: #666; display: block; margin-top: 4px;">Describe what events you want to extract</small>
+            </div>
+            <button id="analyzeBtn" onclick="analyze()">🔍 Analyze Video</button>
+            
+            <div id="progressContainer" class="progress-container hidden">
+                <div class="progress-step" id="progressStep">Step 1/5: Initializing...</div>
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" id="progressBar" style="width: 0%;">0%</div>
+                </div>
+                <div class="progress-log" id="progressLog"></div>
+                <button id="stopBtn" class="stop-btn" onclick="stopAnalysis()">⛔ Stop Analysis</button>
+            </div>
+        </div>
+        
+
+        
+        <div id="results" class="hidden">
+            <div class="card">
+                <h2>Results</h2>
+                <div id="metrics" class="metrics"></div>
+                <div id="events"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentConfig = {};
+        let currentTaskId = null;
+        let currentAnalysisResult = null;
+        let currentEventSource = null;
+        
+        // Load current configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                currentConfig = await response.json();
+            } catch (error) {
+                console.error('Failed to load config:', error);
+            }
+        }
+        
+        // Check health on load
+        Promise.all([
+            fetch('/api/health').then(r => r.json()),
+            loadConfig()
+        ]).then(([healthData]) => {
+                const status = document.getElementById('healthStatus');
+                const healthy = healthData.backend_healthy;
+                status.innerHTML = `
+                    <div class="status ${healthy ? 'success' : 'error'}">
+                        <div class="health-status">
+                            <span class="health-dot ${healthy ? 'healthy' : 'unhealthy'}"></span>
+                            <span>Backend: ${healthData.backend} - ${healthy ? 'Healthy' : 'Unavailable'}</span>
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(e => {
+                document.getElementById('healthStatus').innerHTML = `
+                    <div class="status error">System error: ${e.message}</div>
+                `;
+            });
+        
+
+        
+        async function analyze() {
+            console.log('=== ANALYSIS STARTED ===');
+            const btn = document.getElementById('analyzeBtn');
+            const videoFile = document.getElementById('videoFile').files[0];
+            const videoFileInput = document.getElementById('videoFile');
+            const instructions = document.getElementById('instructions');
+            const results = document.getElementById('results');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressStep = document.getElementById('progressStep');
+            const progressLog = document.getElementById('progressLog');
+            
+            console.log('Video file:', videoFile ? videoFile.name : 'NONE');
+            console.log('Instructions:', instructions.value);
+            console.log('Current config:', currentConfig);
+            
+            if (!videoFile) {
+                console.error('ERROR: No video file selected');
+                alert('Please upload a video file');
+                return;
+            }
+            
+            // Disable all inputs
+            btn.disabled = true;
+            videoFileInput.disabled = true;
+            instructions.readOnly = true;
+            btn.textContent = '⏳ Analyzing video...';
+            results.classList.add('hidden');
+            progressContainer.classList.remove('hidden');
+            progressLog.innerHTML = '';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            
+            try {
+                console.log('Step 1: Preparing to upload video...');
+                // Step 1: Start processing and get task ID
+                const formData = new FormData();
+                formData.append('video', videoFile);
+                formData.append('instructions', instructions.value);
+                formData.append('backend', currentConfig.llm_backend || 'simulated');
+                formData.append('sport', currentConfig.sport || 'floorball');
+                
+                console.log('Sending POST to /api/analyze/start with:', {
+                    videoName: videoFile.name,
+                    videoSize: videoFile.size,
+                    backend: currentConfig.llm_backend || 'simulated',
+                    sport: currentConfig.sport || 'floorball'
+                });
+                
+                const startResponse = await fetch('/api/analyze/start', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                console.log('Response status:', startResponse.status);
+                const startData = await startResponse.json();
+                console.log('Response data:', startData);
+                
+                if (!startResponse.ok) {
+                    console.error('ERROR: Failed to start analysis:', startData.error);
+                    throw new Error(startData.error || 'Failed to start analysis');
+                }
+                
+                const taskId = startData.task_id;
+                currentTaskId = taskId;
+                console.log('Task ID assigned:', taskId);
+                
+                // Step 2: Connect to progress stream
+                console.log('Step 2: Connecting to SSE stream...');
+                const eventSource = new EventSource(`/api/analyze/progress/${taskId}`);
+                currentEventSource = eventSource;
+                console.log('SSE connection established');
+                
+                eventSource.onmessage = function(event) {
+                    const update = JSON.parse(event.data);
+                    console.log('SSE Update received:', update);
+                    
+                    if (update.keepalive) {
+                        return; // Ignore keepalive messages
+                    }
+                    
+                    if (update.error) {
+                        console.error('=== ANALYSIS FAILED ===');
+                        console.error('Error:', update.error);
+                        eventSource.close();
+                        currentEventSource = null;
+                        progressContainer.classList.add('hidden');
+                        btn.disabled = false;
+                        videoFileInput.disabled = false;
+                        instructions.readOnly = false;
+                        btn.textContent = '🔍 Analyze Video';
+                        
+                        // Show error with details
+                        const errorMsg = update.error.includes('GEMINI_API_KEY') 
+                            ? update.error + '\n\nGet your free API key at: https://aistudio.google.com/app/apikey'
+                            : update.error;
+                        alert('Analysis failed:\n\n' + errorMsg);
+                        return;
+                    }
+                    
+                    if (update.complete && update.result) {
+                        console.log('=== ANALYSIS COMPLETE ===');
+                        console.log('Result:', update.result);
+                        console.log('Events found:', update.result.events?.length || 0);
+                        if (update.result.events?.length === 0) {
+                            console.warn('WARNING: No events were detected in the video');
+                            console.warn('Try adjusting your instructions or check if the video contains the events you\'re looking for');
+                        }
+                        eventSource.close();
+                        currentEventSource = null;
+                        progressContainer.classList.add('hidden');
+                        currentAnalysisResult = update.result;
+                        displayResults(update.result);
+                        btn.disabled = false;
+                        videoFileInput.disabled = false;
+                        instructions.readOnly = false;
+                        btn.textContent = '🔍 Analyze Video';
+                    }
+                    
+                    // Update progress
+                    if (update.step && update.total) {
+                        progressStep.textContent = `Step ${update.step}/${update.total}: ${update.message}`;
+                        progressBar.style.width = update.progress + '%';
+                        progressBar.textContent = update.progress + '%';
+                        
+                        // Add to log
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'progress-log-entry current';
+                        logEntry.textContent = `[${update.step}/${update.total}] ${update.message}`;
+                        progressLog.appendChild(logEntry);
+                        progressLog.scrollTop = progressLog.scrollHeight;
+                        
+                        // Mark previous entries as non-current
+                        const entries = progressLog.querySelectorAll('.progress-log-entry');
+                        entries.forEach((entry, idx) => {
+                            if (idx < entries.length - 1) {
+                                entry.classList.remove('current');
+                            }
+                        });
+                    }
+                };
+                
+                eventSource.onerror = function() {
+                    eventSource.close();
+                    progressContainer.classList.add('hidden');
+                    btn.disabled = false;
+                    videoFileInput.disabled = false;
+                    instructions.readOnly = false;
+                    btn.textContent = '🔍 Analyze Video';
+                    alert('Connection to server lost. Please try again.');
+                };
+                
+            } catch (error) {
+                console.error('=== EXCEPTION CAUGHT ===');
+                console.error('Error details:', error);
+                alert('Error: ' + error.message);
+                progressContainer.classList.add('hidden');
+                btn.disabled = false;
+                videoFileInput.disabled = false;
+                instructions.readOnly = false;
+                btn.textContent = '🔍 Analyze Video';
+            }
+        }
+        
+        function stopAnalysis() {
+            console.log('=== STOP REQUESTED ===');
+            console.log('Current task ID:', currentTaskId);
+            
+            if (currentEventSource) {
+                console.log('Closing SSE connection...');
+                currentEventSource.close();
+                currentEventSource = null;
+            }
+            
+            // Reset UI
+            const btn = document.getElementById('analyzeBtn');
+            const videoFileInput = document.getElementById('videoFile');
+            const instructions = document.getElementById('instructions');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressLog = document.getElementById('progressLog');
+            
+            progressLog.innerHTML += '<div class="progress-log-entry" style="color: #f44336; font-weight: bold;">⛔ Analysis stopped by user</div>';
+            
+            setTimeout(() => {
+                progressContainer.classList.add('hidden');
+                btn.disabled = false;
+                videoFileInput.disabled = false;
+                instructions.readOnly = false;
+                btn.textContent = '🔍 Analyze Video';
+                currentTaskId = null;
+                console.log('UI reset complete');
+            }, 1000);
+        }
+
+        
+        async function generateClips() {
+            const btn = document.getElementById('generateClipsBtn');
+            const clipsList = document.getElementById('clipsList');
+            
+            if (!currentTaskId || !currentAnalysisResult) {
+                alert('No analysis data available');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating clips...';
+            clipsList.innerHTML = '<p style="color: #666; font-size: 14px;">Generating video clips, please wait...</p>';
+            
+            try {
+                const response = await fetch('/api/clips/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_id: currentTaskId,
+                        events: currentAnalysisResult.events
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate clips');
+                }
+                
+                // Display clips list with checkboxes
+                if (data.clips && data.clips.length > 0) {
+                    const clipsHtml = data.clips.map((clip, idx) => `
+                        <li>
+                            <div class="clip-left">
+                                <input type="checkbox" class="clip-checkbox" data-filename="${clip.filename}" id="clip_${idx}">
+                                <label for="clip_${idx}" style="cursor: pointer; flex: 1;">📹 ${clip.filename} (${clip.timestamp})</label>
+                            </div>
+                            <a href="/api/clips/download/${clip.filename}" class="clip-download" download>⬇️ Download</a>
+                        </li>
+                    `).join('');
+                    
+                    const controlsHtml = `
+                        <div class="clips-controls">
+                            <button class="select-all-btn" onclick="toggleSelectAll()">Select All</button>
+                            <button class="highlight-reel-btn" onclick="createHighlightReel()" id="highlightReelBtn">
+                                🎬 Create Highlight Reel
+                            </button>
+                        </div>
+                        <div id="highlightResult"></div>
+                    `;
+                    
+                    clipsList.innerHTML = clipsHtml + controlsHtml;
+                    btn.textContent = '✅ Clips Generated';
+                } else {
+                    clipsList.innerHTML = '<p style="color: #999;">No clips were generated.</p>';
+                    btn.textContent = 'Generate Clips';
+                    btn.disabled = false;
+                }
+                
+            } catch (error) {
+                alert('Error generating clips: ' + error.message);
+                clipsList.innerHTML = '';
+                btn.textContent = 'Generate Clips';
+                btn.disabled = false;
+            }
+        }
+        
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('.clip-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+            });
+            
+            const btn = event.target;
+            btn.textContent = allChecked ? 'Select All' : 'Deselect All';
+        }
+        
+        async function createHighlightReel() {
+            const checkboxes = document.querySelectorAll('.clip-checkbox:checked');
+            const selectedClips = Array.from(checkboxes).map(cb => cb.dataset.filename);
+            
+            if (selectedClips.length === 0) {
+                alert('Please select at least one clip to create a highlight reel');
+                return;
+            }
+            
+            const btn = document.getElementById('highlightReelBtn');
+            const resultDiv = document.getElementById('highlightResult');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Creating highlight reel...';
+            resultDiv.innerHTML = '<p style="color: #666; font-size: 14px;">Concatenating clips, please wait...</p>';
+            
+            try {
+                const response = await fetch('/api/clips/concatenate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clips: selectedClips })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to create highlight reel');
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="highlight-result">
+                        ✅ Highlight reel created successfully!<br>
+                        📹 ${data.clips_count} clips concatenated<br>
+                        <a href="/api/clips/download/${data.filename}" download>⬇️ Download ${data.filename}</a>
+                    </div>
+                `;
+                btn.textContent = '✅ Highlight Reel Created';
+                
+            } catch (error) {
+                alert('Error creating highlight reel: ' + error.message);
+                resultDiv.innerHTML = '';
+                btn.textContent = '🎬 Create Highlight Reel';
+                btn.disabled = false;
+            }
+        }
+        
+        function displayResults(data) {
+            const results = document.getElementById('results');
+            const meta = data.meta || {};
+            
+            // Show metrics
+            document.getElementById('metrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">${data.events.length}</div>
+                    <div class="metric-label">Events Found</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${meta.processing_ms || 0}ms</div>
+                    <div class="metric-label">Processing Time</div>
+                </div>
+            `;
+            
+            // Show timestamps for clipping
+            if (data.timestamps && data.timestamps.length > 0) {
+                const timestampsList = data.timestamps.map(t => {
+                    const mins = Math.floor(t / 60);
+                    const secs = Math.floor(t % 60);
+                    return `${mins}:${String(secs).padStart(2, '0')}`;
+                }).join(', ');
+                
+                document.getElementById('metrics').innerHTML += `
+                    <div class="metric" style="grid-column: 1 / -1;">
+                        <div style="font-size: 14px; font-weight: bold; margin-bottom: 8px;">⏱️ Timestamps for Clipping:</div>
+                        <div style="font-family: monospace; font-size: 12px; background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #ddd;">${timestampsList}</div>
+                    </div>
+                `;
+            }
+            
+            // Show events table
+            if (data.events.length > 0) {
+                const eventsHtml = `
+                    <h3>Detected Events</h3>
+                    <table class="events-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Time</th>
+                                <th>Description</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.events.map(e => `
+                                <tr>
+                                    <td><span class="event-badge event-${e.type}">${e.type.toUpperCase()}</span></td>
+                                    <td>${Math.floor(e.timestamp / 60)}:${String(Math.floor(e.timestamp % 60)).padStart(2, '0')}</td>
+                                    <td>${e.description || 'N/A'}</td>
+                                    <td>${e.confidence ? (e.confidence * 100).toFixed(0) + '%' : 'N/A'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                document.getElementById('events').innerHTML = eventsHtml;
+            } else {
+                document.getElementById('events').innerHTML = '<p>No events detected.</p>';
+            }
+            
+            // Add clips section if we have events with timestamps
+            if (data.events.length > 0 && currentTaskId) {
+                const clipsSection = `
+                    <div class="clips-section">
+                        <h3>🎬 Video Clips</h3>
+                        <p style="color: #666; font-size: 14px;">Generate individual clips for each detected event</p>
+                        <button class="generate-clips-btn" onclick="generateClips()" id="generateClipsBtn">Generate ${data.events.length} Clips</button>
+                        <div id="clipsList" class="clips-list"></div>
+                    </div>
+                `;
+                document.getElementById('events').innerHTML += clipsSection;
+            }
+            
+            results.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

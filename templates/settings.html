@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Floorball LLM Analysis</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 { color: #1a1a1a; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
+        select, input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        button { background: #0066cc; color: white; border: none; padding: 12px 24px; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: 500; margin-right: 10px; }
+        button:hover { background: #0052a3; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #5a6268; }
+        .status { padding: 12px; border-radius: 4px; margin-bottom: 20px; }
+        .status.success { background: #e8f5e9; color: #2e7d32; }
+        .status.error { background: #ffebee; color: #c62828; }
+        .info-box { background: #f0f7ff; border-left: 4px solid #0066cc; padding: 12px; margin-bottom: 20px; border-radius: 4px; }
+        .info-box strong { color: #0066cc; }
+        .hidden { display: none; }
+        .nav { margin-bottom: 20px; }
+        .nav a { color: #0066cc; text-decoration: none; font-weight: 500; }
+        .nav a:hover { text-decoration: underline; }
+        .setting-description { font-size: 13px; color: #666; margin-top: 4px; }
+        .section-title { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .toggle { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #0066cc; }
+        input:checked + .slider:before { transform: translateX(26px); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/">← Back to Analysis</a>
+        </div>
+        
+        <h1>⚙️ Settings</h1>
+        <p class="subtitle">Configure your video analysis preferences</p>
+        
+        <div id="statusMessage"></div>
+        
+        <div class="card">
+            <div class="section-title">🤖 LLM Backend Configuration</div>
+            <div class="form-group">
+                <label for="llm_backend">Default LLM Backend</label>
+                <select id="llm_backend">
+                    <option value="simulated">Simulated (Free, for testing)</option>
+                    <option value="openai">OpenAI (GPT-4o with vision)</option>
+                    <option value="gemini">Google Gemini (Vision capable)</option>
+                    <option value="anthropic">Anthropic Claude</option>
+                    <option value="huggingface">HuggingFace</option>
+                    <option value="ollama">Ollama (Local)</option>
+                </select>
+                <div class="setting-description">Choose the AI model to analyze your videos. OpenAI and Gemini support direct video frame analysis.</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="gemini_model">Gemini Model</label>
+                <input type="text" id="gemini_model" placeholder="e.g., gemini-1.5-flash, gemini-1.5-pro, gemini-1.5-flash-8b">
+                <div class="setting-description">Enter the Gemini model name to use when Gemini backend is selected. Common options: gemini-1.5-flash (fast & cheap), gemini-1.5-pro (higher quality), gemini-1.5-flash-8b (smallest).</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="section-title">🏒 Sport Configuration</div>
+            <div class="form-group">
+                <label for="sport">Default Sport</label>
+                <select id="sport">
+                    <option value="floorball">Floorball</option>
+                    <option value="hockey">Hockey</option>
+                    <option value="soccer">Soccer</option>
+                </select>
+                <div class="setting-description">Choose the default sport type for analysis. Each sport has preset event types.</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="section-title">💾 Cache Settings</div>
+            <div class="form-group">
+                <label for="cache_enabled">Enable Cache</label>
+                <label class="toggle">
+                    <input type="checkbox" id="cache_enabled">
+                    <span class="slider"></span>
+                </label>
+                <div class="setting-description">Cache analysis results to speed up repeated requests and reduce API costs.</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="cache_dir">Cache Directory</label>
+                <input type="text" id="cache_dir" placeholder="e.g., .cache">
+                <div class="setting-description">Directory where cache files are stored.</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="section-title">🎬 Video Processing</div>
+            <div class="form-group">
+                <label for="clip_output_dir">Clip Output Directory</label>
+                <input type="text" id="clip_output_dir" placeholder="e.g., clips">
+                <div class="setting-description">Directory where generated video clips will be saved.</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="max_workers">Max Workers (Parallel Processing)</label>
+                <input type="number" id="max_workers" min="1" max="16" value="4">
+                <div class="setting-description">Number of parallel threads for video processing. Higher = faster, but uses more CPU.</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="section-title">🔗 External Services</div>
+            <div class="form-group">
+                <label for="ollama_base_url">Ollama Base URL</label>
+                <input type="text" id="ollama_base_url" placeholder="http://localhost:11434">
+                <div class="setting-description">URL for local Ollama server (only needed if using Ollama backend).</div>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <strong>Note:</strong> API keys are stored in your <code>.env</code> file for security. 
+            Only non-sensitive configuration values can be changed here. Changes are saved to <code>config.yaml</code>.
+        </div>
+        
+        <div style="margin-top: 24px;">
+            <button onclick="saveSettings()">💾 Save Settings</button>
+            <button class="secondary" onclick="resetToDefaults()">🔄 Reset to Defaults</button>
+        </div>
+    </div>
+    
+    <script>
+        let currentConfig = {};
+        
+        // Load current configuration on page load
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                currentConfig = config;
+                
+                // Populate form fields
+                document.getElementById('llm_backend').value = config.llm_backend || 'simulated';
+                document.getElementById('gemini_model').value = config.gemini_model || 'gemini-1.5-flash';
+                document.getElementById('sport').value = config.sport || 'floorball';
+                document.getElementById('cache_enabled').checked = config.cache_enabled || false;
+                document.getElementById('cache_dir').value = config.cache_dir || '.cache';
+                document.getElementById('clip_output_dir').value = config.clip_output_dir || 'clips';
+                document.getElementById('max_workers').value = config.max_workers || 4;
+                document.getElementById('ollama_base_url').value = config.ollama_endpoint || 'http://localhost:11434';
+                
+            } catch (error) {
+                showStatus('Failed to load configuration: ' + error.message, 'error');
+            }
+        }
+        
+        async function saveSettings() {
+            const newConfig = {
+                llm_backend: document.getElementById('llm_backend').value,
+                gemini_model: document.getElementById('gemini_model').value,
+                sport: document.getElementById('sport').value,
+                cache_enabled: document.getElementById('cache_enabled').checked,
+                cache_dir: document.getElementById('cache_dir').value,
+                clip_output_dir: document.getElementById('clip_output_dir').value,
+                max_workers: parseInt(document.getElementById('max_workers').value),
+                ollama_base_url: document.getElementById('ollama_base_url').value
+            };
+            
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newConfig)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showStatus('✅ Settings saved successfully!', 'success');
+                    currentConfig = newConfig;
+                } else {
+                    showStatus('Failed to save settings: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Failed to save settings: ' + error.message, 'error');
+            }
+        }
+        
+        async function resetToDefaults() {
+            if (!confirm('Are you sure you want to reset all settings to defaults?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/config/reset', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showStatus('✅ Settings reset to defaults!', 'success');
+                    await loadConfig();
+                } else {
+                    showStatus('Failed to reset settings: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Failed to reset settings: ' + error.message, 'error');
+            }
+        }
+        
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+            
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.innerHTML = '';
+                }, 5000);
+            }
+        }
+        
+        // Load config on page load
+        loadConfig();
+    </script>
+</body>
+</html>

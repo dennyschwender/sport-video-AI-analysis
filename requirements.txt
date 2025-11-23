@@ -1,0 +1,22 @@
+# Core dependencies
+requests
+pytest
+pydantic
+pyyaml
+diskcache
+python-dotenv
+Pillow
+
+# Web frameworks
+flask>=3.0.0
+gunicorn>=21.2.0
+streamlit
+
+# Video processing (requires ffmpeg system installation)
+# No Python package needed - uses subprocess to call ffmpeg/ffprobe
+
+# Optional LLM SDKs (install as needed):
+openai>=1.0.0
+# anthropic
+# huggingface_hub
+#google-generativeai>=0.3.0  # For Gemini vision support

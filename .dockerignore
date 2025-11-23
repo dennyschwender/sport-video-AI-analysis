@@ -1,0 +1,60 @@
+# .dockerignore - Exclude unnecessary files from Docker image
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Local config and cache
+.env
+*.log
+cache/
+*.sqlite
+*.db
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Streamlit config (not needed for Flask)
+.streamlit/
