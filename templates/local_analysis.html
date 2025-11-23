@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Video Analysis - Floorball LLM</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        .info-box { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .info-box h3 { color: #1976d2; margin-bottom: 8px; }
+        .info-box ul { margin-left: 20px; color: #555; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        input[type="file"], textarea, select { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; font-family: inherit; }
+        textarea { resize: vertical; min-height: 80px; }
+        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 28px; border: none; border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s; width: 100%; }
+        button:hover { transform: translateY(-2px); }
+        button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .progress-container { margin-top: 30px; display: none; }
+        .progress-bar-wrapper { background: #f0f0f0; border-radius: 8px; height: 30px; overflow: hidden; margin-bottom: 15px; }
+        .progress-bar { background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; transition: width 0.3s; }
+        .progress-log { background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 15px; max-height: 300px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; }
+        .progress-log-entry { padding: 4px 0; color: #333; }
+        .video-preview { margin-top: 20px; }
+        .video-preview video { max-width: 100%; border-radius: 8px; }
+        #results { margin-top: 30px; }
+        .events-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .events-table th, .events-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        .events-table th { background: #f5f5f5; font-weight: 600; }
+        .clip-controls { margin-top: 30px; }
+        .clip-controls button { width: auto; margin-right: 10px; margin-bottom: 10px; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏒 Local Video Analysis</h1>
+        <p class="subtitle">Analyze sports videos without uploading the entire file</p>
+        
+        <div class="info-box">
+            <h3>✨ How It Works</h3>
+            <ul>
+                <li><strong>Your video stays on your computer</strong> - no full upload needed</li>
+                <li><strong>Frames extracted locally</strong> using your browser</li>
+                <li><strong>Only frames sent to AI</strong> (~2-5MB instead of 2GB+)</li>
+                <li><strong>Clips generated locally</strong> using timestamps</li>
+                <li><strong>100x faster upload</strong> and more privacy-friendly</li>
+            </ul>
+        </div>
+
+        <div class="form-group">
+            <label for="videoFile">📹 Select Video File</label>
+            <input type="file" id="videoFile" accept="video/*" onchange="handleVideoSelect(event)">
+        </div>
+
+        <div class="video-preview hidden" id="videoPreview">
+            <video id="videoElement" controls></video>
+            <p id="videoInfo" style="margin-top: 10px; color: #666;"></p>
+        </div>
+
+        <div class="form-group">
+            <label for="instructions">📝 Analysis Instructions</label>
+            <textarea id="instructions" placeholder="Example: Find all goals, saves, and penalties">Find all goals, saves, and penalties</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="backend">🤖 AI Backend</label>
+            <select id="backend">
+                <option value="openai">OpenAI GPT-4o</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="simulated">Simulated (Testing)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="sport">⚽ Sport Type</label>
+            <select id="sport">
+                <option value="floorball">Floorball</option>
+                <option value="hockey">Hockey</option>
+                <option value="soccer">Soccer</option>
+            </select>
+        </div>
+
+        <button id="analyzeBtn" onclick="analyzeVideoLocal()">🔍 Analyze Video Locally</button>
+
+        <div class="progress-container" id="progressContainer">
+            <h3>Progress</h3>
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="progressBar" style="width: 0%;">0%</div>
+            </div>
+            <div class="progress-log" id="progressLog"></div>
+        </div>
+
+        <div id="results" class="hidden">
+            <h2>📊 Analysis Results</h2>
+            <table class="events-table" id="eventsTable"></table>
+            
+            <div class="clip-controls">
+                <button onclick="downloadTimestamps()">⬇️ Download Timestamps (JSON)</button>
+                <button onclick="showClipInstructions()">📖 How to Generate Clips Locally</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let videoFile = null;
+        let videoElement = null;
+        let analysisResults = null;
+
+        function handleVideoSelect(event) {
+            videoFile = event.target.files[0];
+            if (videoFile) {
+                const preview = document.getElementById('videoPreview');
+                const video = document.getElementById('videoElement');
+                const info = document.getElementById('videoInfo');
+                
+                video.src = URL.createObjectURL(videoFile);
+                videoElement = video;
+                
+                video.onloadedmetadata = () => {
+                    const duration = Math.round(video.duration);
+                    const sizeMB = (videoFile.size / 1024 / 1024).toFixed(2);
+                    info.textContent = `Duration: ${duration}s | Size: ${sizeMB}MB | Name: ${videoFile.name}`;
+                    preview.classList.remove('hidden');
+                };
+            }
+        }
+
+        async function analyzeVideoLocal() {
+            if (!videoFile) {
+                alert('Please select a video file first');
+                return;
+            }
+
+            const btn = document.getElementById('analyzeBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressLog = document.getElementById('progressLog');
+            const results = document.getElementById('results');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Processing...';
+            progressContainer.style.display = 'block';
+            results.classList.add('hidden');
+            progressLog.innerHTML = '';
+
+            try {
+                // Step 1: Extract frames locally
+                updateProgress(10, 'Extracting frames from video...');
+                const frames = await extractFramesFromVideo(videoElement, 8); // Extract every 8 seconds
+                updateProgress(30, `Extracted ${frames.length} frames locally`);
+
+                // Step 2: Prepare frames for upload
+                updateProgress(40, 'Preparing frames for AI analysis...');
+                const frameData = await Promise.all(frames.map(async (frame, idx) => {
+                    return {
+                        index: idx,
+                        timestamp: frame.timestamp,
+                        data: frame.dataUrl
+                    };
+                }));
+
+                // Step 3: Send frames to backend
+                updateProgress(50, 'Sending frames to AI backend...');
+                const response = await fetch('/api/analyze/frames', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        frames: frameData,
+                        instructions: document.getElementById('instructions').value,
+                        backend: document.getElementById('backend').value,
+                        sport: document.getElementById('sport').value,
+                        video_duration: videoElement.duration
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Analysis failed');
+                }
+
+                updateProgress(80, 'AI analysis complete, processing results...');
+                const result = await response.json();
+                analysisResults = result;
+
+                updateProgress(100, 'Complete!');
+                displayResults(result);
+
+            } catch (error) {
+                console.error(error);
+                alert('Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Analyze Video Locally';
+            }
+        }
+
+        async function extractFramesFromVideo(video, intervalSeconds) {
+            const frames = [];
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 640; // Resize for faster upload
+            canvas.height = 360;
+
+            const duration = video.duration;
+            const numFrames = Math.floor(duration / intervalSeconds);
+
+            for (let i = 0; i < numFrames; i++) {
+                const timestamp = i * intervalSeconds;
+                video.currentTime = timestamp;
+                
+                await new Promise(resolve => {
+                    video.onseeked = () => {
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                        frames.push({ timestamp, dataUrl });
+                        updateProgress(10 + (i / numFrames) * 20, `Extracting frame ${i + 1}/${numFrames}...`);
+                        resolve();
+                    };
+                });
+            }
+
+            return frames;
+        }
+
+        function updateProgress(percent, message) {
+            const progressBar = document.getElementById('progressBar');
+            const progressLog = document.getElementById('progressLog');
+            
+            progressBar.style.width = percent + '%';
+            progressBar.textContent = Math.round(percent) + '%';
+            
+            const entry = document.createElement('div');
+            entry.className = 'progress-log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            progressLog.appendChild(entry);
+            progressLog.scrollTop = progressLog.scrollHeight;
+        }
+
+        function displayResults(data) {
+            const results = document.getElementById('results');
+            const table = document.getElementById('eventsTable');
+            
+            if (data.events && data.events.length > 0) {
+                let html = `
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Time</th>
+                            <th>Description</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                `;
+                
+                data.events.forEach(event => {
+                    const mins = Math.floor(event.timestamp / 60);
+                    const secs = Math.floor(event.timestamp % 60);
+                    html += `
+                        <tr>
+                            <td>${event.type}</td>
+                            <td>${mins}:${String(secs).padStart(2, '0')}</td>
+                            <td>${event.description || 'N/A'}</td>
+                            <td>${event.confidence ? (event.confidence * 100).toFixed(0) + '%' : 'N/A'}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody>';
+                table.innerHTML = html;
+                results.classList.remove('hidden');
+            } else {
+                table.innerHTML = '<p>No events detected</p>';
+                results.classList.remove('hidden');
+            }
+        }
+
+        function downloadTimestamps() {
+            if (!analysisResults) return;
+            
+            const dataStr = JSON.stringify(analysisResults, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'analysis_results.json';
+            a.click();
+        }
+
+        function showClipInstructions() {
+            alert(`To generate clips locally using ffmpeg:
+
+1. Download and install ffmpeg: https://ffmpeg.org/download.html
+
+2. Use this command for each event:
+   ffmpeg -i video.mp4 -ss START_TIME -t DURATION -c copy clip.mp4
+
+Example for event at 2:15 (135 seconds):
+   ffmpeg -i myvideo.mp4 -ss 130 -t 10 -c copy goal_2min15s.mp4
+
+The timestamps JSON file contains all event times!`);
+        }
+    </script>
+</body>
+</html>

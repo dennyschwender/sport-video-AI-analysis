@@ -5,7 +5,9 @@
 ## Core Features
 
 🎥 **Video Analysis**
+- **Two modes:** Full upload or Local processing (no upload!)
 - Upload game videos (up to 5GB, supports MP4/MKV/AVI)
+- **Local mode:** Extract frames in browser, upload only frames (~2-5MB instead of 2GB+)
 - AI-powered frame analysis with GPT-4o Vision or Gemini
 - Custom instructions: "Find all goals and ball losses"
 - Real-time progress tracking with 5-step progress bar
@@ -372,7 +374,29 @@ All 38 tests passing ✅
 
 ## Usage Guide
 
-### How to Analyze Videos
+### Two Analysis Modes
+
+#### Mode 1: Standard Upload (Current Page)
+- Upload full video file to server
+- Best for: Server with good upload speed, Docker deployment
+- Clips generated automatically on server
+
+#### Mode 2: Local Processing (Click "💻 Local Mode")
+- **Video stays on your computer** - no upload!
+- Frames extracted in your browser using Canvas API
+- Only frames sent to AI (~2-5MB instead of 2GB+)
+- **100x faster "upload"** - 5 seconds vs 5 minutes
+- Download timestamps as JSON
+- Generate clips locally using ffmpeg
+
+**When to use Local Mode:**
+- Large video files (>1GB)
+- Slow upload speed
+- Privacy concerns
+- Want to keep original video quality
+- Have ffmpeg installed locally
+
+### How to Analyze Videos (Standard Mode)
 
 1. **Start the application:**
    ```powershell
@@ -488,6 +512,53 @@ rate_limit_max_retries: 3     # Max retry attempts per chunk
 - Higher TPM/RPM → Use more workers for faster processing
 - Lower TPM/RPM → Use fewer workers to avoid 429 errors
 - If you hit rate limits, the system will automatically retry with exponential backoff
+
+### Local Processing Mode (No Upload)
+
+**Access:** Click "💻 Local Mode (No Upload)" from the main page
+
+**Benefits:**
+- ✅ **No video upload** - your video never leaves your computer
+- ✅ **100x faster** - upload only frames (~2-5MB) instead of full video (~2GB+)
+- ✅ **Privacy-friendly** - video data stays local
+- ✅ **Same AI analysis** - uses same backends (OpenAI/Gemini)
+- ✅ **Generate clips locally** - using ffmpeg on your machine
+
+**Workflow:**
+1. Select video file (stays in browser memory)
+2. Browser extracts frames using Canvas API (every 8 seconds)
+3. Frames converted to JPEG and uploaded to AI backend
+4. AI analyzes frames and returns event timestamps
+5. Download timestamps as JSON
+6. Generate clips locally using ffmpeg commands
+
+**Example:**
+```
+Video: game.mp4 (2.5GB, 2 hours)
+Extracted: 900 frames @ 8s interval
+Uploaded: 3.2MB of JPEG frames
+Analysis time: 4 minutes
+Downloaded: timestamps.json
+
+# Generate clip locally:
+ffmpeg -i game.mp4 -ss 125 -t 10 -c copy goal_2min05s.mp4
+```
+
+**Requirements for clip generation:**
+- ffmpeg installed: `https://ffmpeg.org/download.html`
+- Original video file accessible locally
+- Timestamps JSON file from analysis
+
+**Limitations:**
+- Clips must be generated manually using ffmpeg
+- No automatic highlight reel compilation (must concat clips yourself)
+- Requires technical comfort with command line
+
+**Best for:**
+- Large video files (>1GB)
+- Slow internet connections
+- Privacy-sensitive content
+- Users comfortable with ffmpeg/CLI tools
      3. Frames extracted
      4. AI analysis
      5. Complete

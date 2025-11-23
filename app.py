@@ -67,10 +67,85 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/local')
+def local_analysis():
+    """Local analysis page (no video upload)."""
+    return render_template('local_analysis.html')
+
+
 @app.route('/settings')
 def settings():
     """Settings page."""
     return render_template('settings.html')
+
+
+@app.route('/api/analyze/frames', methods=['POST'])
+def analyze_frames():
+    """Analyze pre-extracted frames from client (no video upload)."""
+    try:
+        data = request.get_json()
+        frames_data = data.get('frames', [])
+        instructions = data.get('instructions', 'Find all goals, shots, and penalties')
+        backend_name = data.get('backend', 'simulated')
+        sport = data.get('sport', 'floorball')
+        video_duration = data.get('video_duration', 0)
+        
+        if not frames_data:
+            return jsonify({'error': 'No frames provided'}), 400
+        
+        logger.info(f"=== Analyzing {len(frames_data)} pre-extracted frames ===")
+        logger.info(f"Backend: {backend_name}, Sport: {sport}, Duration: {video_duration}s")
+        
+        # Initialize backend
+        api_key = None
+        model = None
+        if backend_name == 'openai':
+            api_key = os.getenv('OPENAI_API_KEY', '')
+        elif backend_name == 'gemini':
+            api_key = os.getenv('GEMINI_API_KEY', '')
+            model = config.gemini_model
+        
+        vision_backend = get_vision_backend(backend_name, api_key, model)
+        
+        # Convert base64 frames to format expected by backend
+        import base64
+        from io import BytesIO
+        from PIL import Image
+        
+        frames = []
+        for frame_data in frames_data:
+            # Extract base64 data (remove data:image/jpeg;base64, prefix)
+            base64_str = frame_data['data'].split(',')[1]
+            frames.append({
+                'timestamp': frame_data['timestamp'],
+                'data': base64_str
+            })
+        
+        # Call the vision backend's analysis method directly with frames
+        result = vision_backend._analyze_frames_impl(
+            frames=[f['data'] for f in frames],
+            instructions=instructions,
+            sport=sport,
+            frame_interval=frames[1]['timestamp'] - frames[0]['timestamp'] if len(frames) > 1 else 8,
+            max_frames=len(frames),
+            time_offset=0.0
+        )
+        
+        logger.info(f"Analysis complete: {len(result)} events detected")
+        
+        return jsonify({
+            'success': True,
+            'events': result,
+            'meta': {
+                'frames_analyzed': len(frames),
+                'video_duration': video_duration,
+                'backend': backend_name
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Frame analysis error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/health', methods=['GET'])
