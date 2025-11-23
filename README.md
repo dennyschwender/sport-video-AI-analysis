@@ -377,7 +377,7 @@ All 38 tests passing ✅
 1. **Start the application:**
    ```powershell
    # Local development
-   & c:/Users/denny/Development/.venv/Scripts/python.exe app.py
+   python app.py
    
    # Or with Docker
    docker-compose up -d
