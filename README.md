@@ -76,7 +76,7 @@ Perfect for testing and development without API costs.
 
 ```powershell
 # Just run the app, select "simulated" backend
-& c:/Users/denny/Development/.venv/Scripts/python.exe app.py
+python app.py
 ```
 
 #### 2. OpenAI GPT-4o Vision (Recommended for Production)
