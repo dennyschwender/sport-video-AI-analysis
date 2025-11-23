@@ -200,7 +200,8 @@ def analyze_start():
                     raise Exception(f"Video analysis error: {meta['error']}")
                 
                 # Step 5: Generate clips
-                send_progress(task_id, 5, 5, f'Generating {len(events)} video clips...')
+                if task_id in progress_queues:
+                    send_progress(task_id, 5, 5, f'Generating {len(events)} video clips...')
                 logger.info(f"Preparing to generate {len(events)} clips...")
                 clips = []
                 if events:
@@ -209,25 +210,29 @@ def analyze_start():
                 
                 # Send completion
                 completion_msg = 'Stopped - Partial Results' if was_cancelled else 'Complete!'
-                send_progress(task_id, 5, 5, completion_msg)
+                if task_id in progress_queues:
+                    send_progress(task_id, 5, 5, completion_msg)
                 logger.info(f"=== Analysis {'stopped' if was_cancelled else 'complete'} for task {task_id} ===")
                 logger.info(f"Total events: {len(events)}")
                 logger.info(f"Processing time: {meta.get('processing_ms', 0)}ms")
                 logger.info(f"Cost: ${meta.get('cost_usd', 0):.6f}")
                 
-                # Store result
-                progress_queues[task_id].put({
-                    'complete': True,
-                    'result': {
-                        'success': True,
-                        'events': events,
-                        'clips': [os.path.basename(c) for c in clips],
-                        'timestamps': [e.get('timestamp', 0) for e in events],
-                        'meta': meta,
-                        'cache_hit': False,
-                        'cancelled': was_cancelled
-                    }
-                })
+                # Store result (check queue still exists)
+                if task_id in progress_queues:
+                    progress_queues[task_id].put({
+                        'complete': True,
+                        'result': {
+                            'success': True,
+                            'events': events,
+                            'clips': [os.path.basename(c) for c in clips],
+                            'timestamps': [e.get('timestamp', 0) for e in events],
+                            'meta': meta,
+                            'cache_hit': False,
+                            'cancelled': was_cancelled
+                        }
+                    })
+                else:
+                    logger.warning(f"Progress queue for task {task_id} was already cleaned up")
                 
                 # Clean up cancellation flag
                 if task_id in cancelled_tasks:

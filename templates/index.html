@@ -260,7 +260,10 @@
                         console.log('=== ANALYSIS COMPLETE ===');
                         console.log('Result:', update.result);
                         console.log('Events found:', update.result.events?.length || 0);
-                        if (update.result.events?.length === 0) {
+                        if (update.result.cancelled) {
+                            console.log('Analysis was stopped by user - showing partial results');
+                        }
+                        if (update.result.events?.length === 0 && !update.result.cancelled) {
                             console.warn('WARNING: No events were detected in the video');
                             console.warn('Try adjusting your instructions or check if the video contains the events you\'re looking for');
                         }
@@ -273,6 +276,13 @@
                         videoFileInput.disabled = false;
                         instructions.readOnly = false;
                         btn.textContent = '🔍 Analyze Video';
+                        
+                        // Reset stop button for next analysis
+                        const stopBtn = document.getElementById('stopBtn');
+                        if (stopBtn) {
+                            stopBtn.disabled = false;
+                            stopBtn.textContent = '⛔ Stop Analysis';
+                        }
                     }
                     
                     // Update progress
@@ -338,30 +348,18 @@
                 });
             }
             
-            if (currentEventSource) {
-                console.log('Closing SSE connection...');
-                currentEventSource.close();
-                currentEventSource = null;
-            }
+            // DON'T close SSE connection - wait for backend to send final results
+            // The backend will detect cancellation and return partial results
             
-            // Reset UI
-            const btn = document.getElementById('analyzeBtn');
-            const videoFileInput = document.getElementById('videoFile');
-            const instructions = document.getElementById('instructions');
-            const progressContainer = document.getElementById('progressContainer');
             const progressLog = document.getElementById('progressLog');
+            progressLog.innerHTML += '<div class="progress-log-entry" style="color: #f44336; font-weight: bold;">⛔ Stop requested - Waiting for partial results...</div>';
             
-            progressLog.innerHTML += '<div class="progress-log-entry" style="color: #f44336; font-weight: bold;">⛔ Analysis stopped by user - Processing partial results...</div>';
-            
-            setTimeout(() => {
-                progressContainer.classList.add('hidden');
-                btn.disabled = false;
-                videoFileInput.disabled = false;
-                instructions.readOnly = false;
-                btn.textContent = '🔍 Analyze Video';
-                currentTaskId = null;
-                console.log('UI reset complete');
-            }, 1000);
+            // Disable the stop button to prevent multiple clicks
+            const stopBtn = document.getElementById('stopBtn');
+            if (stopBtn) {
+                stopBtn.disabled = true;
+                stopBtn.textContent = '⏳ Stopping...';
+            }
         }
 
         
