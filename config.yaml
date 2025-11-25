@@ -10,6 +10,7 @@
 
 # Which LLM backend to use
 # Options: simulated, openai, gemini, anthropic, huggingface, ollama
+# Edit only the block that matches your chosen backend and leave others commented to avoid confusion.
 llm_backend: openai
 
 # Sport type for analysis
@@ -21,12 +22,22 @@ sport: floorball
 # ============================================================
 
 # OpenAI model selection
-# Options: gpt-4o, gpt-4o-mini, gpt-4-turbo
-openai_model: gpt-5o-mini
+# Options: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-5-mini-2025-08-07, gpt-5-nano-2025-08-07
+openai_model: gpt-5-mini-2025-08-07
+
+# OpenAI Rate Limits (Tokens Per Minute / Requests Per Minute)
+# Used to automatically calculate optimal chunk delays
+# Free tier limits (update these based on your actual plan):
+openai_rate_limit_tpm: 500000  # Tokens per minute limit # 200000 per gpt-5-nano
+openai_rate_limit_rpm: 500     # Requests per minute limit
 
 # Anthropic model selection
 # Options: claude-3-5-sonnet-20241022, claude-3-opus-20240229
 # anthropic_model: claude-3-5-sonnet-20241022
+
+# Anthropic Rate Limits
+# anthropic_rate_limit_tpm: 80000
+# anthropic_rate_limit_rpm: 50
 
 # HuggingFace model selection
 # huggingface_model: meta-llama/Llama-3.2-3B-Instruct
@@ -47,13 +58,22 @@ openai_model: gpt-5o-mini
 # Output directory for generated clips
 clip_output_dir: clips
 
-# Enable LLM response caching (faster, saves API costs)
+# Enable LLM response caching (faster responses but increases token usage)
 cache_enabled: true
 cache_dir: .cache
 
-# Parallel processing for batch operations
+## Parallel processing for batch operations (interacts with rate limits; enable only if your API tier can handle extra workers)
 parallel_processing: false
 max_workers: 4
+
+# Goal refinement and annotation settings
+goal_refinement_enabled: true        # Dense sampling for extra confidence
+goal_refinement_attempts: 2          # Max goals to re-check per analysis
+goal_refinement_window: 2.5          # Seconds before/after suspected goal
+goal_refinement_interval: 0.25       # Dense sampling interval for refinement
+goal_annotation_enabled: false       # Append confirmed goals to annotations for training
+goal_annotation_dir: annotations/goals
+goal_annotation_threshold: 0.7       # Minimum confidence to persist annotation
 
 # ============================================================
 # Rate Limit Settings (for chunk parallel processing)
@@ -64,8 +84,21 @@ max_workers: 4
 # OpenAI Rate Limits:
 # - gpt-4o: 30,000 TPM / 500 RPM (Tokens/Requests Per Minute)
 # - gpt-4o-mini: 500,000 TPM / 500 RPM
-# Recommendation: Use 1-2 workers for gpt-4o, 3-4 for gpt-4o-mini
-max_workers_openai: 2
+# - gpt-5-mini: 500,000 TPM / 500 RPM
+# - gpt-5-nano: 200,000 TPM / 500 RPM
+# 
+# AUTO-CALCULATED: Based on openai_rate_limit_rpm setting above
+# Formula: max_workers = (RPM / 15) * 0.8
+#   - RPM / 15 = chunks per minute (each worker processes ~15 chunks/min)
+#   - * 0.8 = use 80% capacity for safety margin
+# 
+# Examples:
+#   500 RPM → (500/15)*0.8 = 26 workers
+#   200 RPM → (200/15)*0.8 = 10 workers
+#   50 RPM → (50/15)*0.8 = 2 workers
+# 
+# The formula is used automatically so you only need an override if you want to pin a specific worker count.
+# max_workers_openai: 2  # Optional override; default auto-calculates (e.g., 26 workers at 500 RPM)
 
 # Gemini Rate Limits:
 # - Free tier: 15 RPM (requests per minute)
@@ -77,12 +110,13 @@ max_workers_gemini: 4
 # OpenAI typically suggests waiting 30-60s after 429 error
 rate_limit_retry_delay: 40.0
 
-# Maximum retry attempts for rate-limited requests
+# Maximum retry attempts for rate-limited requests (applies only to chunked parallel processing above)
 # After this many retries, the chunk will be skipped
 rate_limit_max_retries: 3
 
 # ============================================================
 # Retry & Timeout Settings (general API errors)
+# These apply to single-call HTTP requests outside of the chunked parallelizer.
 # ============================================================
 
 max_retries: 3
@@ -97,7 +131,7 @@ log_level: INFO  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_file: logs/floorball_llm.log  # Log file path (relative to project root)
 
 # ============================================================
-# Sport Presets - Customize event detection per sport
+# Sport Presets - Customize event detection per sport (see docs/ or src/config_manager.py for adding new sports)
 # ============================================================
 
 sport_presets:
@@ -114,10 +148,13 @@ sport_presets:
     clip_padding_before: 10
     clip_padding_after: 5
     time_dedup_window: 5.0
-    frame_interval: 5.0  # Extract 1 frame every 8 seconds (fast-paced sport)
-    max_frames: 25  # Max frames to send to LLM per API call
+    frame_interval: 2.5  # Extract 1 frame every X seconds (fast-paced sport, high sampling rate)
+    max_frames: 50  # Maximum frames per API call (auto-adjusted if it would exceed TPM limits)
+                    # Formula: max_frames ≈ (TPM / 12 - 2500) / 850
+                    # Example: 500k TPM → ~46 frames max, 200k TPM → ~16 frames max
+    hint: "Look for: ball crossing the goal line, net shaking, referee pointing to center, players celebrating near the crease, goalkeeper reaction, and teammates hugging. Ignore scoreboard-only changes unless you also see the goal."
     keywords:
-      goal: [goal, score, scores]
+      goal: [goal, score, scores, net, goal light, celebrate, scoreboard]
       assist: [assist, pass, setup]
       shot: [shot, shoots, attempt]
       save: [save, saves, stopped, block]
@@ -139,8 +176,9 @@ sport_presets:
     time_dedup_window: 5.0
     frame_interval: 10.0  # Standard sampling
     max_frames: 20
+    hint: "Look for: puck crossing the goal line, red goal light, referee waving, player celebrations, and keeper reactions. Avoid relying on scoreboard flashes without the goal motion."
     keywords:
-      goal: [goal, score]
+      goal: [goal, score, scores, goal light, net]
       penalty: [penalty, 2 minutes, 5 minutes]
       icing: [icing]
       offside: [offside]
@@ -162,8 +200,9 @@ sport_presets:
     time_dedup_window: 5.0
     frame_interval: 15.0  # Sample less frequently for slower-paced sport
     max_frames: 15  # Fewer frames needed
+    hint: "Look for: ball crossing the goal line, net rippling, players celebrating, referee signals, and goalkeeper pushes. Scoreboard updates alone should not trigger a goal."
     keywords:
-      goal: [goal, score]
+      goal: [goal, score, net, celebrate]
       corner: [corner, corner kick]
       yellow_card: [yellow card, booking]
       red_card: [red card, sent off]

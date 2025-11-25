@@ -101,6 +101,7 @@ def analyze_frames():
         model = None
         if backend_name == 'openai':
             api_key = os.getenv('OPENAI_API_KEY', '')
+            model = config.openai_model
         elif backend_name == 'gemini':
             api_key = os.getenv('GEMINI_API_KEY', '')
             model = config.gemini_model
@@ -121,31 +122,246 @@ def analyze_frames():
                 'data': base64_str
             })
         
-        # Call the vision backend's analysis method directly with frames
-        result = vision_backend._analyze_frames_impl(
-            frames=[f['data'] for f in frames],
-            instructions=instructions,
-            sport=sport,
-            frame_interval=frames[1]['timestamp'] - frames[0]['timestamp'] if len(frames) > 1 else 8,
-            max_frames=len(frames),
-            time_offset=0.0
-        )
+        # Chunk frames for analysis
+        from src.config_manager import SPORT_PRESETS
+        sport_preset = SPORT_PRESETS.get(sport, SPORT_PRESETS['floorball'])
+        max_frames_per_call = sport_preset.max_frames
+        frame_interval = frames[1]['timestamp'] - frames[0]['timestamp'] if len(frames) > 1 else sport_preset.frame_interval
+
+        all_events = []
+        chunk_size = max_frames_per_call
         
-        logger.info(f"Analysis complete: {len(result)} events detected")
+        # Prepare chunk tasks
+        chunk_tasks = []
+        for i in range(0, len(frames), chunk_size):
+            chunk = frames[i:i+chunk_size]
+            chunk_tasks.append({
+                'chunk_num': i//chunk_size + 1,
+                'chunk_data': [f['data'] for f in chunk],
+                'chunk_time_offset': chunk[0]['timestamp'] if chunk else 0.0,
+                'chunk_length': len(chunk)
+            })
         
+        # Get rate limit settings and calculate workers
+        rate_limit_retry_delay = getattr(config, 'rate_limit_retry_delay', 40.0)
+        rate_limit_max_retries = getattr(config, 'rate_limit_max_retries', 3)
+        
+        # Calculate optimal workers based on backend
+        max_workers = 1  # Default for unknown backends
+        if backend_name == 'openai':
+            openai_rpm = getattr(config, 'openai_rate_limit_rpm', 500)
+            calculated_workers = max(1, int((openai_rpm // 15) * 0.8))
+            max_workers_config = getattr(config, 'max_workers_openai', None)
+            max_workers = max_workers_config if max_workers_config is not None else calculated_workers
+        elif backend_name == 'gemini':
+            max_workers = getattr(config, 'max_workers_gemini', 4)
+        
+        # Ensure max_workers is valid and cap it by number of chunks
+        max_workers = max(1, int(max_workers)) if isinstance(max_workers, (int, float)) else 1
+        max_workers = min(max_workers, len(chunk_tasks))
+        logger.info(f"Processing {len(chunk_tasks)} chunks with {max_workers} parallel workers")
+        
+        # Process chunks in parallel
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time as time_module
+        
+        def process_chunk(task):
+            """Process a single chunk with retry on rate limit."""
+            for attempt in range(rate_limit_max_retries):
+                try:
+                    chunk_events = vision_backend._analyze_frames_impl(
+                        frames=task['chunk_data'],
+                        instructions=instructions,
+                        sport=sport,
+                        frame_interval=frame_interval,
+                        max_frames=task['chunk_length'],
+                        time_offset=task['chunk_time_offset']
+                    )
+                    return task['chunk_num'], chunk_events, None
+                except Exception as e:
+                    error_str = str(e)
+                    if '429' in error_str or 'rate_limit' in error_str.lower():
+                        if attempt < rate_limit_max_retries - 1:
+                            logger.warning(f"Rate limit hit on chunk {task['chunk_num']}, waiting {rate_limit_retry_delay}s...")
+                            time_module.sleep(rate_limit_retry_delay)
+                            continue
+                    return task['chunk_num'], [], str(e)
+            return task['chunk_num'], [], "Max retries exceeded"
+        
+        # Execute chunks in parallel
+        chunk_results = {}
+        errors = []
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_task = {executor.submit(process_chunk, task): task for task in chunk_tasks}
+            
+            for future in as_completed(future_to_task):
+                chunk_num, chunk_events, error = future.result()
+                chunk_results[chunk_num] = chunk_events
+                
+                if error:
+                    errors.append(f"Chunk {chunk_num}: {error}")
+                    logger.error(f"Chunk {chunk_num} failed: {error}")
+                else:
+                    logger.info(f"Chunk {chunk_num}: {len(chunk_events)} events detected")
+        
+        # Combine results in order
+        for chunk_num in sorted(chunk_results.keys()):
+            all_events.extend(chunk_results[chunk_num])
+        
+        # If there were errors but we got some results, note it
+        if errors:
+            logger.warning(f"Analysis completed with errors: {len(all_events)} events from {len(chunk_results)} chunks")
+        
+        logger.info(f"Analysis complete: {len(all_events)} events detected (parallel processing with {max_workers} workers)")
+
         return jsonify({
             'success': True,
-            'events': result,
+            'events': all_events,
             'meta': {
                 'frames_analyzed': len(frames),
                 'video_duration': video_duration,
-                'backend': backend_name
+                'backend': backend_name,
+                'parallel_workers': max_workers,
+                'total_chunks': len(chunk_tasks)
             }
         })
         
     except Exception as e:
         logger.error(f"Frame analysis error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analyze/frames/stream', methods=['POST'])
+def analyze_frames_stream():
+    """Analyze pre-extracted frames with real-time progress updates via SSE."""
+    def generate():
+        try:
+            data = request.get_json()
+            frames_data = data.get('frames', [])
+            instructions = data.get('instructions', 'Find all goals, shots, and penalties')
+            backend_name = data.get('backend', 'simulated')
+            sport = data.get('sport', 'floorball')
+            video_duration = data.get('video_duration', 0)
+            
+            if not frames_data:
+                yield f"data: {json.dumps({'error': 'No frames provided'})}\n\n"
+                return
+            
+            yield f"data: {json.dumps({'type': 'status', 'message': f'Starting analysis of {len(frames_data)} frames'})}\n\n"
+            
+            # Initialize backend
+            api_key = None
+            model = None
+            if backend_name == 'openai':
+                api_key = os.getenv('OPENAI_API_KEY', '')
+                model = config.openai_model
+            elif backend_name == 'gemini':
+                api_key = os.getenv('GEMINI_API_KEY', '')
+                model = config.gemini_model
+            
+            vision_backend = get_vision_backend(backend_name, api_key, model)
+            
+            # Convert frames
+            frames = []
+            for frame_data in frames_data:
+                base64_str = frame_data['data'].split(',')[1]
+                frames.append({
+                    'timestamp': frame_data['timestamp'],
+                    'data': base64_str
+                })
+            
+            # Prepare chunks
+            from src.config_manager import SPORT_PRESETS
+            sport_preset = SPORT_PRESETS.get(sport, SPORT_PRESETS['floorball'])
+            max_frames_per_call = sport_preset.max_frames
+            frame_interval = frames[1]['timestamp'] - frames[0]['timestamp'] if len(frames) > 1 else sport_preset.frame_interval
+            
+            chunk_size = max_frames_per_call
+            chunk_tasks = []
+            for i in range(0, len(frames), chunk_size):
+                chunk = frames[i:i+chunk_size]
+                chunk_tasks.append({
+                    'chunk_num': i//chunk_size + 1,
+                    'chunk_data': [f['data'] for f in chunk],
+                    'chunk_time_offset': chunk[0]['timestamp'] if chunk else 0.0,
+                    'chunk_length': len(chunk)
+                })
+            
+            # Calculate workers
+            rate_limit_retry_delay = getattr(config, 'rate_limit_retry_delay', 40.0)
+            rate_limit_max_retries = getattr(config, 'rate_limit_max_retries', 3)
+            
+            max_workers = 1
+            if backend_name == 'openai':
+                openai_rpm = getattr(config, 'openai_rate_limit_rpm', 500)
+                calculated_workers = max(1, int((openai_rpm // 15) * 0.8))
+                max_workers_config = getattr(config, 'max_workers_openai', None)
+                max_workers = max_workers_config if max_workers_config is not None else calculated_workers
+            elif backend_name == 'gemini':
+                max_workers = getattr(config, 'max_workers_gemini', 4)
+            
+            max_workers = max(1, int(max_workers)) if isinstance(max_workers, (int, float)) else 1
+            max_workers = min(max_workers, len(chunk_tasks))
+            
+            yield f"data: {json.dumps({'type': 'info', 'total_chunks': len(chunk_tasks), 'workers': max_workers})}\n\n"
+            
+            # Process chunks with progress updates
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import time as time_module
+            
+            def process_chunk(task):
+                for attempt in range(rate_limit_max_retries):
+                    try:
+                        chunk_events = vision_backend._analyze_frames_impl(
+                            frames=task['chunk_data'],
+                            instructions=instructions,
+                            sport=sport,
+                            frame_interval=frame_interval,
+                            max_frames=task['chunk_length'],
+                            time_offset=task['chunk_time_offset']
+                        )
+                        return task['chunk_num'], chunk_events, None
+                    except Exception as e:
+                        error_str = str(e)
+                        if '429' in error_str or 'rate_limit' in error_str.lower():
+                            if attempt < rate_limit_max_retries - 1:
+                                time_module.sleep(rate_limit_retry_delay)
+                                continue
+                        return task['chunk_num'], [], str(e)
+                return task['chunk_num'], [], "Max retries exceeded"
+            
+            chunk_results = {}
+            errors = []
+            completed_count = 0
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_task = {executor.submit(process_chunk, task): task for task in chunk_tasks}
+                
+                for future in as_completed(future_to_task):
+                    chunk_num, chunk_events, error = future.result()
+                    chunk_results[chunk_num] = chunk_events
+                    completed_count += 1
+                    
+                    progress = int((completed_count / len(chunk_tasks)) * 100)
+                    
+                    if error:
+                        errors.append(f"Chunk {chunk_num}: {error}")
+                        yield f"data: {json.dumps({'type': 'chunk_error', 'chunk': chunk_num, 'error': error, 'progress': progress})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'chunk_complete', 'chunk': chunk_num, 'events': len(chunk_events), 'progress': progress, 'completed': completed_count, 'total': len(chunk_tasks)})}\n\n"
+            
+            # Combine results
+            all_events = []
+            for chunk_num in sorted(chunk_results.keys()):
+                all_events.extend(chunk_results[chunk_num])
+            
+            yield f"data: {json.dumps({'type': 'complete', 'events': all_events, 'total_events': len(all_events), 'meta': {'frames_analyzed': len(frames), 'workers': max_workers, 'chunks': len(chunk_tasks)}})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 
 @app.route('/api/health', methods=['GET'])
@@ -172,7 +388,36 @@ def analyze_stop(task_id):
     return jsonify({'success': True, 'message': 'Stop signal sent'})
 
 
-
+@app.route('/api/video/upload', methods=['POST'])
+def video_upload():
+    """Upload video file for local mode (clip generation only, no analysis)."""
+    try:
+        # Generate task ID
+        task_id = str(int(time.time() * 1000))
+        
+        # Extract video file from request
+        video_file = request.files.get('video')
+        if not video_file:
+            return jsonify({'error': 'No video file provided'}), 400
+        
+        # Save video file temporarily
+        temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], f'temp_{task_id}_{video_file.filename}')
+        video_file.save(temp_video_path)
+        
+        # Cache video path for later clip generation
+        video_cache[task_id] = temp_video_path
+        
+        logger.info(f"Video uploaded for task {task_id}: {temp_video_path}")
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'filename': video_file.filename
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to upload video: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/analyze/start', methods=['POST'])
@@ -190,6 +435,8 @@ def analyze_start():
         instructions = request.form.get('instructions', 'Find all goals, shots, and penalties')
         backend_name = request.form.get('backend', 'simulated')
         sport = request.form.get('sport', 'floorball')
+        time_from = request.form.get('time_from', type=float)
+        time_to = request.form.get('time_to', type=float)
         
         # Save video file temporarily
         temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], f'temp_{task_id}_{video_file.filename}')
@@ -220,6 +467,8 @@ def analyze_start():
                 model = None
                 if backend_name == 'openai':
                     api_key = os.getenv('OPENAI_API_KEY', '')
+                    model = config.openai_model
+                    logger.info(f"Using OpenAI model: {model}")
                 elif backend_name == 'gemini':
                     api_key = os.getenv('GEMINI_API_KEY', '')
                     model = config.gemini_model
@@ -253,7 +502,7 @@ def analyze_start():
                 def is_cancelled():
                     return cancelled_tasks.get(task_id, False)
                 
-                result = vision_backend.analyze_video_frames(video_path, instructions, sport, progress_callback=chunk_progress, config=config, is_cancelled_callback=is_cancelled)
+                result = vision_backend.analyze_video_frames(video_path, instructions, sport, progress_callback=chunk_progress, config=config, is_cancelled_callback=is_cancelled, time_from=time_from, time_to=time_to)
                 
                 events = result.get('events', [])
                 meta = result.get('meta', {})
@@ -281,7 +530,10 @@ def analyze_start():
                 clips = []
                 if events:
                     clips_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'clips')
-                    clips = prepare_clips(events, video_path, clips_dir)
+                    sport_preset = SPORT_PRESETS.get(sport, SPORT_PRESETS.get('floorball', {}))
+                    padding_before = sport_preset.clip_padding_before if hasattr(sport_preset, 'clip_padding_before') else 5
+                    padding_after = sport_preset.clip_padding_after if hasattr(sport_preset, 'clip_padding_after') else 5
+                    clips = prepare_clips(events, video_path, clips_dir, padding_before, padding_after)
                 
                 # Send completion
                 completion_msg = 'Stopped - Partial Results' if was_cancelled else 'Complete!'
@@ -412,8 +664,35 @@ def cache_clear():
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
-    """Get current configuration."""
-    return jsonify(config.to_dict())
+    """Get current configuration including sport presets."""
+    from src.config_manager import SPORT_PRESETS
+    config_dict = config.to_dict()
+    
+    # Add sport presets to config
+    config_dict['sport_presets'] = {
+        sport_name: {
+            'name': preset.name,
+            'event_types': preset.event_types,
+            'clip_padding_before': preset.clip_padding_before,
+            'clip_padding_after': preset.clip_padding_after,
+            'time_dedup_window': preset.time_dedup_window,
+            'frame_interval': preset.frame_interval,
+            'max_frames': preset.max_frames,
+            'hint': preset.hint,
+            'keywords': preset.keywords
+        }
+        for sport_name, preset in SPORT_PRESETS.items()
+    }
+    
+    # Add rate limit info for automatic delay calculation
+    config_dict['rate_limits'] = {
+        'openai_tpm': getattr(config, 'openai_rate_limit_tpm', 200000),
+        'openai_rpm': getattr(config, 'openai_rate_limit_rpm', 500),
+        'anthropic_tpm': getattr(config, 'anthropic_rate_limit_tpm', 80000),
+        'anthropic_rpm': getattr(config, 'anthropic_rate_limit_rpm', 50)
+    }
+    
+    return jsonify(config_dict)
 
 
 @app.route('/api/config', methods=['POST'])
@@ -546,7 +825,13 @@ def generate_clips():
         clips_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'clips')
         os.makedirs(clips_dir, exist_ok=True)
         
-        clips = prepare_clips(events, video_path, clips_dir)
+        # Get sport-specific padding from config
+        sport = config.sport or 'floorball'
+        sport_preset = SPORT_PRESETS.get(sport, SPORT_PRESETS.get('floorball', {}))
+        padding_before = sport_preset.clip_padding_before if hasattr(sport_preset, 'clip_padding_before') else 5
+        padding_after = sport_preset.clip_padding_after if hasattr(sport_preset, 'clip_padding_after') else 5
+        
+        clips = prepare_clips(events, video_path, clips_dir, padding_before, padding_after)
         
         # Format response with timestamps
         clips_info = []
@@ -634,6 +919,26 @@ def concatenate_clips_endpoint():
         
     except Exception as e:
         logger.error(f"Failed to concatenate clips: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clips/methods')
+def get_clipping_methods():
+    """Get available video clipping methods."""
+    try:
+        from src.video_clipper import get_available_clipping_methods
+        
+        methods = get_available_clipping_methods()
+        
+        return jsonify({
+            'available_methods': methods,
+            'has_ffmpeg': 'ffmpeg-python' in methods or 'ffmpeg-subprocess' in methods,
+            'has_moviepy': 'moviepy' in methods,
+            'can_clip': len(methods) > 0
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to check clipping methods: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

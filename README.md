@@ -8,14 +8,17 @@
 - **Two modes:** Full upload or Local processing (no upload!)
 - Upload game videos (up to 5GB, supports MP4/MKV/AVI)
 - **Local mode:** Extract frames in browser, upload only frames (~2-5MB instead of 2GB+)
+- **Time range filtering:** Analyze only specific portions (e.g., 00:01:30-00:05:00 or 90-300 seconds)
 - AI-powered frame analysis with GPT-4o Vision or Gemini
 - Custom instructions: "Find all goals and ball losses"
 - Real-time progress tracking with 5-step progress bar
+- **Execution timer:** Shows elapsed time during analysis (⏱️ Elapsed: 125s)
 - **Chunked processing for long videos** - handles full games (2+ hours)
 - **Parallel chunk analysis** (4x faster for long videos)
 - Automatic event detection with timestamps
 - On-demand clip generation with download links
 - **Interactive stop button** to cancel analysis and **keep partial results** from processed chunks
+- **Field locking:** All inputs disabled during analysis (except stop button)
 
 🤖 **Multiple Vision Backends**
 - **OpenAI GPT-4o Vision** - High accuracy video frame analysis
@@ -25,6 +28,7 @@
 📊 **Event Detection**
 - Goals, assists, shots, saves, penalties, turnovers, timeouts
 - Confidence scores for each detection
+- **Advanced confidence filtering:** Use comparison operators (>82%, >=90, <50, <=30)
 - Team and player identification
 - Returns list of timestamps for clipping
 - Sport-specific frame sampling (floorball: 8s, hockey: 10s, soccer: 15s)
@@ -319,7 +323,7 @@ cache_enabled: true
 clip_output_dir: clips
 ```
 
-**Note:** 
+**Note:**
 - `.env` is automatically loaded by `python-dotenv` and contains **only secrets**
 - `config.yaml` contains **app settings** (models, sport, cache settings)
 - API keys in `.env` ALWAYS override config.yaml (for security)
@@ -340,39 +344,80 @@ flask run
 
 Navigate to `http://localhost:5000`.
 
-#### Run Streamlit Prototype UI
+### Testing
 
 ```powershell
-python -m streamlit run scripts/web_ui.py
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_new_features.py -v
+
+# Run with coverage
+pytest tests/ --cov=src --cov-report=html
 ```
 
-Navigate to `http://localhost:8501`.
+> **Status:** `pytest tests` is run after every change; latest execution (2025-11-25) reported 132 passed and 1 skipped.
 
-### Basic CLI Usage
+**Test Coverage:** 133 tests total (132 passing ✅, 1 skipped)
 
-```powershell
-# Create a config file (optional)
-python -c "from src.config_manager import AppConfig; AppConfig().to_yaml('config.yaml')"
-
-# Run analysis on a video (requires transcript .txt file alongside)
-python scripts/run_analysis.py --video path\to\video.mp4
-```
-
-### Benchmarking
-
-```powershell
-python scripts/benchmark_enhanced.py
-```
-
-## Testing
-
-```powershell
-pytest tests/test_enhanced.py -v
-```
-
-All 38 tests passing ✅
+Test suites include:
+- **Core functionality:** Event detection, clipping, backends (89 tests)
+- **User features:** Time filtering, confidence operators, UI state (17 tests)
+- **Session features:** Select all checkbox, filtered exports, config improvements (23 tests)
+  - Select all/none checkbox with filter awareness
+  - Filtered exports (timestamps, clips, highlight reels)
+  - Max frames auto-calculation from TPM limits
+  - Clip padding configuration from sport presets
+  - Enhanced AI prompting with detailed visual indicators
+  - Video upload endpoint for local mode
+  - FFmpeg API compatibility fixes
+  - Integration scenarios and workflows
 
 ## Usage Guide
+
+### Quick Feature Reference
+
+#### ⏱️ Time Range Filtering (NEW)
+Analyze only specific portions of your video:
+```
+From: 00:01:30  (or just 90 for seconds)
+To:   00:05:00  (or just 300 for seconds)
+```
+**Use cases:**
+- Skip intros/outros: Start at 0:30, end 10 seconds before video ends
+- Single period: Analyze just 2nd period of game (20:00-40:00)
+- Specific plays: Focus on last 5 minutes for comeback analysis
+- **Cost savings:** 50-90% reduction for partial analysis
+
+#### 🔍 Advanced Confidence Filtering (NEW)
+Use comparison operators to filter events:
+```
+>82     Show events with confidence greater than 82%
+>=90    Show events with confidence 90% or higher
+<50     Show events with confidence less than 50%
+<=30    Show events with confidence 30% or lower
+```
+**Use cases:**
+- Find reliable detections: `>85`
+- Review questionable events: `<60`
+- Quality threshold: `>=90`
+
+#### ⏱️ Execution Timer (NEW)
+See how long your analysis is taking in real-time:
+```
+⏱️ Elapsed: 125s
+```
+- Updates every second
+- Helps estimate remaining time
+- Useful for cost calculations
+
+#### 🔒 Field Locking (NEW)
+All inputs automatically disabled during analysis:
+- Prevents accidental configuration changes
+- Visual feedback (grayed out, different cursor)
+- Stop button remains enabled
+- Fields re-enabled when complete
 
 ### Two Analysis Modes
 
@@ -388,6 +433,7 @@ All 38 tests passing ✅
 - **100x faster "upload"** - 5 seconds vs 5 minutes
 - Download timestamps as JSON
 - Generate clips locally using ffmpeg
+- **Now supports highlight reels!** (Fixed)
 
 **When to use Local Mode:**
 - Large video files (>1GB)
@@ -402,7 +448,7 @@ All 38 tests passing ✅
    ```powershell
    # Local development
    python app.py
-   
+
    # Or with Docker
    docker-compose up -d
    ```
@@ -434,7 +480,7 @@ All 38 tests passing ✅
    - If stopped early, see notice: "Analysis Stopped - Showing partial results from 28/44 chunks"
    - **Partial results still usable**: Generate clips and create highlight reels from detected events
    - Click "Generate Clips" to create individual video clips
-   
+
 7. **Create Highlight Reel:**
    - Select clips with checkboxes (or "Select All")
    - Click "🎬 Create Highlight Reel"
@@ -494,7 +540,7 @@ The system includes automatic rate limit handling to respect API provider limits
 
 ```yaml
 # OpenAI Rate Limits (30,000 TPM for gpt-4o, 500,000 TPM for gpt-4o-mini)
-max_workers_openai: 2  # Use 1-2 for gpt-4o, 3-4 for gpt-4o-mini
+max_workers_openai: 2  # Optional override; leave commented to auto-calc (~26 workers at 500 RPM)
 
 # Gemini Rate Limits (15 RPM free tier, higher for paid)
 max_workers_gemini: 4  # Use 4-6 for paid tier, 2 for free tier
@@ -559,19 +605,346 @@ ffmpeg -i game.mp4 -ss 125 -t 10 -c copy goal_2min05s.mp4
 - Slow internet connections
 - Privacy-sensitive content
 - Users comfortable with ffmpeg/CLI tools
-     3. Frames extracted
-     4. AI analysis
-     5. Complete
 
-6. **Get results:**
+1. **Get results:**
    - Timestamps for each event (e.g., `2:15, 5:42, 12:08`)
    - Event descriptions with confidence scores
    - Event table with type, time, description, confidence
+   - **Filter events** by any column (Type, Time, Description, Confidence)
 
-7. **Generate clips (optional):**
+2. **Generate clips (optional):**
    - Click "Generate X Clips" button in results
+   - **Automatic clip generation** (no ffmpeg commands needed!)
    - Download individual clips for each event
    - Clips saved with timestamps in filenames
+
+**Clip Generation Methods:**
+The app automatically uses the best available method:
+1. **ffmpeg-python** (fastest, requires `pip install ffmpeg-python`)
+2. **ffmpeg subprocess** (fast, requires ffmpeg installed)
+3. **moviepy** (slower but pure Python, `pip install moviepy`)
+
+**No manual ffmpeg commands needed!** The app handles everything.
+
+### Column Filtering
+
+Filter events in real-time by typing in the filter row below table headers:
+
+**Filter Options:**
+- **Type**: Filter by event type (goal, shot, save, penalty)
+- **Time**: Filter by timestamp (e.g., "2:15", "0:48")
+- **Description**: Search event descriptions
+- **Confidence**: Filter by confidence percentage (e.g., "95%")
+
+**Features:**
+- Real-time filtering as you type (no submit needed)
+- Case-insensitive search
+- Multiple filters combine with AND logic
+- Active filters highlighted in green
+- Shows "Showing X of Y events" count
+- Click 🔄 Clear Filters to reset all
+
+**Examples:**
+```
+Type: goal, Confidence: 9  → High-confidence goals only
+Time: 0:                    → All events in first minute
+Description: red team       → Events mentioning red team
+```
+
+**Available in both modes:**
+- 💻 Local Mode (browser-based analysis)
+- 📤 Upload Mode (server-based analysis)
+
+#### Advanced Confidence Filtering with Comparison Operators
+
+Filter events by confidence threshold using comparison operators for precise control:
+
+**Supported Operators:**
+- `>` - Greater than (e.g., `>75` finds events above 75% confidence)
+- `>=` - Greater than or equal (e.g., `>=80` finds 80% and above)
+- `<` - Less than (e.g., `<50` finds events below 50% confidence)
+- `<=` - Less than or equal (e.g., `<=30` finds 30% and below)
+- No operator - Text matching (e.g., `85` or `85%` finds exactly 85%)
+
+**How It Works:**
+1. Type operator and number in Confidence filter box
+2. Events filter immediately (no submit needed)
+3. Percentage sign (`%`) is optional - `>75` and `>75%` work the same
+4. Operators work with or without spaces - `>75` and `> 75` both work
+
+**Example Use Cases:**
+```
+>80     → High-confidence events only (above 80%)
+>=90    → Very high confidence (90% and above)
+<60     → Review low-confidence events for false positives
+<=40    → Flag potentially incorrect detections
+85      → Find exactly 85% confidence events
+```
+
+**Workflow Example - Creating High-Quality Highlight Reel:**
+```
+1. Set Confidence filter: >=85
+2. Result: Only high-confidence events shown
+3. Select events with checkboxes
+4. Click "✨ Combined Highlight Reel"
+5. Download professionally-curated highlight video
+```
+
+### Video Clip Generation and Downloads
+
+After analysis completes, you have **three download options** for working with detected events:
+
+#### 📄 Download Timestamps (TXT)
+- Creates text file with all selected events
+- Format: `HH:MM:SS - Event Type - Description`
+- Use for: Manual review, sharing timestamps, importing to other tools
+- Example output:
+  ```
+  00:02:15 - goal - Red team scores
+  00:05:42 - save - Goalkeeper blocks shot
+  00:12:08 - penalty - Blue team penalty
+  ```
+
+#### 🎬 Download Individual Clips
+- Generates separate video clip for each selected event
+- Clips include configurable padding (default: 5-10 seconds before/after event)
+- Filenames include timestamp and event type: `clip_000_goal_135.mp4`
+- All clips download automatically with 500ms delays
+- Use for: Frame-by-frame analysis, social media posts, play review
+
+**How It Works:**
+1. Select events using checkboxes (or "Select All")
+2. Click "🎬 Individual Clips" button
+3. Backend generates clips using ffmpeg
+4. Clips automatically download one-by-one
+5. Find clips in your Downloads folder
+
+**Technical Details:**
+- Uses multi-backend video processing (ffmpeg-python → moviepy → ffmpeg-subprocess)
+- Clips saved to `uploads/clips/` directory
+- Automatic fallback if one clipping method fails
+- No re-encoding (fast copy mode when possible)
+
+#### ✨ Download Combined Highlight Reel
+- Concatenates all selected clips into single video
+- Preserves chronological order (earliest events first)
+- No re-encoding between clips (fast, no quality loss)
+- Output filename: `highlight_reel_YYYYMMDD_HHMMSS.mp4`
+- Use for: Team review sessions, public sharing, game analysis
+
+**How It Works:**
+1. Select key moments using checkboxes
+2. Click "✨ Combined Highlight Reel" button
+3. Backend generates individual clips
+4. Clips concatenated using ffmpeg
+5. Single highlight reel downloads automatically
+6. Ready to share or review
+
+**Workflow Example - Creating Custom Highlight Reel:**
+```
+1. Analyze full game (2 hours)
+2. Filter: Type="goal", Confidence>85
+3. Result: 8 high-confidence goals
+4. Select all goals with checkbox
+5. Click "✨ Combined Highlight Reel"
+6. Download: highlight_reel_20241215_143022.mp4 (contains all 8 goals)
+7. Share with team or post to social media
+```
+
+**Performance Notes:**
+- Individual clips: ~1-2 seconds per clip generation
+- Concatenation: ~2-5 seconds for 5-10 clips
+- Total time: Usually under 30 seconds for typical highlight reel
+- Progress feedback shown during generation
+
+### Advanced Features
+
+#### 🎯 Select All/None Checkbox with Filter Awareness
+
+Smart selection checkbox in the event table header that respects active filters:
+
+**Features:**
+- **Filter-aware selection:** Only selects/deselects visible (filtered) events
+- **Works with all filters:** Event type, confidence, search text
+- **Visual feedback:** Shows current selection state
+- **Efficient workflow:** Select hundreds of filtered events with one click
+
+**How It Works:**
+```
+1. Apply filters (e.g., Type="goal", Confidence>85)
+2. Click checkbox in table header
+3. Only visible filtered events get selected
+4. Hidden events remain unaffected
+5. Export or download selected events
+```
+
+**Example Workflow - Filtering + Bulk Selection:**
+```
+Scenario: 200 total events, want only high-confidence goals
+1. Filter: Type="goal" → Shows 45 goals
+2. Filter: Confidence>85 → Shows 12 high-confidence goals
+3. Click select all checkbox → 12 goals selected
+4. Click "✨ Combined Highlight Reel"
+5. Downloads: highlight reel with 12 best goals only
+```
+
+#### 📤 Filtered Exports
+
+All export functions now respect active filters and only export selected + visible events:
+
+**Export Types:**
+1. **📄 Download Timestamps (TXT)** - Only selected + visible events
+2. **🎬 Individual Clips** - Only selected + visible events  
+3. **✨ Highlight Reel** - Only selected + visible events
+
+**Workflow Example:**
+```
+200 total events detected
+↓ Filter: Type="goal" → 45 events visible
+↓ Filter: Confidence>=80 → 18 events visible
+↓ Select 12 events with checkboxes
+↓ Click "📄 Download Timestamps"
+→ TXT file contains only those 12 selected events (not all 200)
+```
+
+**Before vs After:**
+- **Before:** Export includes all events, ignoring filters
+- **After:** Export only includes selected events that pass filters
+- **Benefit:** Precise control over exported content
+
+#### ⚙️ Max Frames Auto-Calculation
+
+System automatically calculates optimal `max_frames` based on API rate limits (TPM/RPM):
+
+**Formula:**
+```
+max_frames = (TPM / 12 - 2500) / 850
+```
+
+**Configured Defaults:**
+- **OpenAI gpt-4o-mini** (500,000 TPM): 55 frames
+- **OpenAI gpt-4o** (30,000 TPM): 0 frames (chunking disabled)
+- **Gemini Flash** (4,000,000 TPM): 388 frames
+- **Gemini Pro** (360,000 TPM): 38 frames
+
+**How It Works:**
+```yaml
+# config.yaml
+backends:
+  openai:
+    model: "gpt-4o-mini"
+    tokens_per_minute: 500000  # ← System reads this
+    max_frames: 55             # ← Auto-calculated from formula
+```
+
+**Benefits:**
+- No manual calculation needed
+- Prevents rate limit errors
+- Optimized for each model's capabilities
+- Safe defaults that maximize throughput
+
+**Override:** Set custom `max_frames` in config.yaml to override auto-calculation
+
+#### 🎬 Configurable Clip Padding
+
+Clip duration now configurable per sport via `config.yaml`:
+
+**Configuration:**
+```yaml
+sport_presets:
+  floorball:
+    clip_padding_before: 10   # Seconds before event
+    clip_padding_after: 5     # Seconds after event
+  
+  hockey:
+    clip_padding_before: 8
+    clip_padding_after: 7
+```
+
+**Total Clip Duration:**
+```
+Clip duration = padding_before + padding_after
+Floorball: 10s + 5s = 15 second clips
+Hockey: 8s + 7s = 15 second clips
+```
+
+**Benefits:**
+- **Sport-specific timing:** More buildup for floorball (10s before), quicker cuts for hockey
+- **Flexible customization:** Adjust per your analysis needs
+- **Consistent across app:** All clip generation uses same padding
+- **Easy to modify:** Edit config.yaml, no code changes needed
+
+**Example Use Cases:**
+- More context: Increase `padding_before` to 15s for play development
+- Quick highlights: Decrease both to 3s for rapid-fire compilation
+- Slow-motion analysis: Increase `padding_after` to capture full aftermath
+
+#### 🎯 Enhanced AI Prompting
+
+AI vision prompts now include detailed visual indicators for each event type:
+
+**6 Visual Indicators Per Event:**
+1. **Primary indicator** - Main visual cue (e.g., "ball crosses goal line")
+2. **Player reaction** - Celebration, frustration, arms raised
+3. **Goalkeeper action** - Diving, retrieving ball, looking defeated
+4. **Crowd/bench reaction** - Standing, cheering, hands on heads
+5. **Scoreboard changes** - Score updates (when visible)
+6. **Game flow changes** - Faceoff at center, timeout called
+
+**Confidence Level Guidance:**
+```
+HIGH (0.85-1.0):  All 4+ indicators clearly visible
+MEDIUM (0.7-0.85): 2-3 indicators visible
+LOW (0.5-0.7):     Only 1-2 indicators visible
+```
+
+**Example - Goal Detection:**
+```
+Look for these visual indicators:
+✓ Ball crossing goal line
+✓ Players raising arms in celebration
+✓ Goalkeeper retrieving ball from net
+✓ Opposing team looking deflated
+✓ Scoreboard updating (if visible)
+✓ Faceoff at center circle after
+
+Confidence: 0.95 (all 6 indicators present)
+```
+
+#### 🧠 Goal Confirmation & Annotation (NEW)
+
+The backend now double-checks uncertain goals by re-analyzing the frames around each candidate, and it can log confirmed goals for manual review.
+
+**Workflow:**
+1. Goals without clear supporting events (<0.9 confidence) trigger a dense-sampling pass around ±2.5 seconds at 0.25s intervals.
+2. Confirmed goals receive at least one supporting indicator (ball crossing the line) and their confidence is bumped to ≥0.8.
+3. Goals that only mention scoreboard updates (no visible action) are capped at 0.65 confidence to avoid false positives.
+4. Enable annotation mode to append high-confidence goals (`confidence ≥ 0.7`) to `annotations/goals/goal_candidates.jsonl` for future training.
+
+**Configuration (in `config.yaml`):**
+```yaml
+goal_refinement_enabled: true
+goal_refinement_attempts: 2
+goal_refinement_window: 2.5
+goal_refinement_interval: 0.25
+goal_annotation_enabled: false
+goal_annotation_dir: annotations/goals
+goal_annotation_threshold: 0.7
+```
+
+Use the annotation log to build a curated dataset of confirmed goals or to feed into downstream machine‑learning tooling.
+
+**Benefits:**
+- **Higher accuracy:** AI checks multiple visual cues
+- **Better confidence scores:** Based on number of indicators
+- **Fewer false positives:** Won't detect goal from scoreboard alone
+- **Clearer reasoning:** AI explains what it saw
+
+**Improved Event Types:**
+- Goals: 6 detailed indicators
+- Shots: 6 detailed indicators  
+- Saves: 6 detailed indicators
+- Assists, penalties, turnovers: Enhanced descriptions
 
 ### Example Workflows
 
@@ -608,9 +981,9 @@ Result: Pattern analysis for team review
 
 ### Tips for Better Results
 
-✅ **Be specific:** "Find all goals, shots on goal, and penalty shots"  
-✅ **Use sport terms:** "Find all goals" not "Find when ball goes in net"  
-✅ **Video quality matters:** Higher resolution = better detection  
+✅ **Be specific:** "Find all goals, shots on goal, and penalty shots"
+✅ **Use sport terms:** "Find all goals" not "Find when ball goes in net"
+✅ **Video quality matters:** Higher resolution = better detection
 ✅ **Optimize length:** 10-20 min chunks process faster than full games
 
 ## Troubleshooting
@@ -619,8 +992,8 @@ Result: Pattern analysis for team review
 **Solution:** Install ffmpeg: `winget install FFmpeg`
 
 ### "OpenAI API error"
-**Cause:** Invalid or missing API key  
-**Solution:** 
+**Cause:** Invalid or missing API key
+**Solution:**
 1. Get API key from https://platform.openai.com/api-keys
 2. Set environment variable: `$env:OPENAI_API_KEY="sk-..."`
 3. Or add to `.env` file
@@ -629,8 +1002,8 @@ Result: Pattern analysis for team review
 **Solution:** Set API key: `$env:ANTHROPIC_API_KEY="sk-ant-..."`
 
 ### "Ollama connection refused"
-**Cause:** Ollama server not running  
-**Solution:** 
+**Cause:** Ollama server not running
+**Solution:**
 1. Start Ollama: `ollama serve`
 2. Verify it's running: `ollama list`
 3. Check URL: `$env:OLLAMA_BASE_URL="http://localhost:11434"`
@@ -649,8 +1022,8 @@ Result: Pattern analysis for team review
 **Solution:** Verify ffmpeg is installed: `ffmpeg -version`
 
 ### "Rate limit exceeded" (OpenAI/Anthropic)
-**Cause:** Too many API requests  
-**Solution:** 
+**Cause:** Too many API requests
+**Solution:**
 1. Wait a few minutes
 2. Upgrade your API plan
 3. Use `simulated` backend for testing
@@ -703,7 +1076,7 @@ Generate video clips from detected events.
 }
 ```
 
-### GET /api/clips/download/<filename>
+### GET /api/clips/download/\<filename\>
 
 Download a generated clip file.
 

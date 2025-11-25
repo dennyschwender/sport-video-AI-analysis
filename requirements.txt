@@ -12,8 +12,12 @@ flask>=3.0.0
 gunicorn>=21.2.0
 streamlit
 
-# Video processing (requires ffmpeg system installation)
-# No Python package needed - uses subprocess to call ffmpeg/ffprobe
+# Video processing (optional - enables in-browser clip generation)
+# Recommended: Install at least one of these for automatic video clipping
+ffmpeg-python>=0.2.0      # Fastest (requires ffmpeg installed)
+moviepy>=1.0.3          # Pure Python fallback (slower, no ffmpeg needed)
+
+# If neither installed, users can still generate clips manually with ffmpeg CLI
 
 # Optional LLM SDKs (install as needed):
 openai>=1.0.0

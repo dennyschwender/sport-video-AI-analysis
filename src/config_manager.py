@@ -19,6 +19,7 @@ class SportPreset:
     time_dedup_window: float = 5.0
     frame_interval: float = 10.0  # seconds between frames sent to LLM
     max_frames: int = 20  # maximum frames per API call
+    hint: str = ""  # Sport-specific guidance for AI vision models
     keywords: Dict[str, List[str]] = field(default_factory=dict)
 
 
@@ -27,10 +28,11 @@ DEFAULT_SPORT_PRESETS = {
     "floorball": SportPreset(
         name="floorball",
         event_types=["goal", "assist", "shot", "save", "penalty", "timeout"],
-        clip_padding_before=5,
-        clip_padding_after=8,
-        frame_interval=8.0,  # Fast-paced sport, sample every 8 seconds
-        max_frames=25,  # More frames for better accuracy
+        clip_padding_before=10,
+        clip_padding_after=5,
+        frame_interval=0.5,  # Fast-paced sport, sample every 0.5 seconds
+        max_frames=50,  # More frames for better accuracy
+        hint="Look for: ball crossing the goal line, net wobble, referee confirming goal, teammates celebrating near the crease, and goalkeeper reactions. Avoid scoreboard-only changes.",
         keywords={
             "goal": ["goal", "score", "scores"],
             "assist": ["assist", "pass", "setup"],
@@ -47,6 +49,7 @@ DEFAULT_SPORT_PRESETS = {
         clip_padding_after=10,
         frame_interval=10.0,  # Standard sampling
         max_frames=20,
+        hint="Look for: puck crossing goal line, red goal light, players celebrating, goalkeeper saves, shots on goal, penalty calls.",
         keywords={
             "goal": ["goal", "score"],
             "penalty": ["penalty", "2 minutes", "5 minutes"],
@@ -61,6 +64,7 @@ DEFAULT_SPORT_PRESETS = {
         clip_padding_after=12,
         frame_interval=15.0,  # Slower sport, sample less frequently
         max_frames=15,  # Fewer frames needed
+        hint="Look for: ball crossing goal line, players celebrating, goalkeeper saves, shots on goal, yellow/red cards, corner kicks.",
         keywords={
             "goal": ["goal", "score"],
             "corner": ["corner", "corner kick"],
@@ -100,13 +104,19 @@ class AppConfig:
     
     # Rate limit settings (for chunk parallel processing)
     # OpenAI has lower rate limits (30K TPM for gpt-4o), use fewer workers
-    max_workers_openai: int = 2
+    max_workers_openai: Optional[int] = None
     # Gemini has higher rate limits, can handle more workers
     max_workers_gemini: int = 4
     # Delay between retries when hitting rate limits (seconds)
     rate_limit_retry_delay: float = 40.0
     # Maximum retries for rate-limited requests
     rate_limit_max_retries: int = 3
+    
+    # Rate limit values (used for automatic delay calculation)
+    openai_rate_limit_tpm: int = 200000  # Tokens per minute
+    openai_rate_limit_rpm: int = 500     # Requests per minute
+    anthropic_rate_limit_tpm: int = 80000
+    anthropic_rate_limit_rpm: int = 50
     
     # Retry settings (general API errors)
     max_retries: int = 3
@@ -116,6 +126,14 @@ class AppConfig:
     # Logging
     log_level: str = "INFO"
     log_file: Optional[str] = "logs/floorball_llm.log"
+    # Goal confirmation and annotation enhancements
+    goal_refinement_enabled: bool = True
+    goal_refinement_attempts: int = 2
+    goal_refinement_window: float = 2.5
+    goal_refinement_interval: float = 0.25
+    goal_annotation_enabled: bool = False
+    goal_annotation_dir: str = "annotations/goals"
+    goal_annotation_threshold: float = 0.7
     
     def get_sport_preset(self) -> SportPreset:
         """Get the preset for the configured sport."""
@@ -149,6 +167,7 @@ class AppConfig:
                     time_dedup_window=preset_data.get('time_dedup_window', 5.0),
                     frame_interval=preset_data.get('frame_interval', 10.0),
                     max_frames=preset_data.get('max_frames', 20),
+                    hint=preset_data.get('hint', ''),
                     keywords=preset_data.get('keywords', {})
                 )
             # Remove sport_presets from data before creating config

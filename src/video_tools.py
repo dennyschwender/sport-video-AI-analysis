@@ -23,13 +23,15 @@ def get_video_duration(video_path: str) -> float:
         return 0.0
 
 
-def extract_frames(video_path: str, output_dir: str, interval_seconds: int = 5) -> List[str]:
+def extract_frames(video_path: str, output_dir: str, interval_seconds: float = 5.0, start_time: float = None, end_time: float = None) -> List[str]:
     """Extract frames from video at specified intervals.
     
     Args:
         video_path: Path to input video
         output_dir: Directory to save frames
-        interval_seconds: Extract one frame every N seconds
+        interval_seconds: Extract one frame every N seconds (can be fractional)
+        start_time: Start time in seconds (optional)
+        end_time: End time in seconds (optional)
     
     Returns:
         List of frame file paths
@@ -37,16 +39,33 @@ def extract_frames(video_path: str, output_dir: str, interval_seconds: int = 5) 
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        # Use ffmpeg to extract frames
+        # Build ffmpeg command
+        cmd = ['ffmpeg']
+        
+        # Add start time if specified
+        if start_time is not None and start_time > 0:
+            cmd.extend(['-ss', str(start_time)])
+        
+        # Add input file
+        cmd.extend(['-i', video_path])
+        
+        # Add duration if end_time is specified
+        if end_time is not None and start_time is not None:
+            duration = end_time - start_time
+            cmd.extend(['-t', str(duration)])
+        elif end_time is not None:
+            cmd.extend(['-t', str(end_time)])
+        
+        # Add frame extraction filter and output
         output_pattern = os.path.join(output_dir, 'frame_%04d.jpg')
-        cmd = [
-            'ffmpeg',
-            '-i', video_path,
-            '-vf', f'fps=1/{interval_seconds}',  # 1 frame every N seconds
+        # Protect against zero or negative intervals
+        safe_interval = max(0.05, interval_seconds)
+        cmd.extend([
+            '-vf', f'fps=1/{safe_interval}',  # 1 frame every N seconds
             '-q:v', '2',  # High quality
             output_pattern,
             '-y'  # Overwrite
-        ]
+        ])
         
         subprocess.run(cmd, capture_output=True, check=True)
         
@@ -78,7 +97,7 @@ def find_audio_transcript_for_video(video_path: str) -> str:
 
 
 def extract_clip(video_path: str, start_time: float, duration: float, output_path: str) -> bool:
-    """Extract a clip from video using ffmpeg.
+    """Extract a clip from video using multiple methods (ffmpeg-python, moviepy fallback).
     
     Args:
         video_path: Source video path
@@ -89,30 +108,19 @@ def extract_clip(video_path: str, start_time: float, duration: float, output_pat
     Returns:
         True if successful, False otherwise
     """
-    try:
-        cmd = [
-            'ffmpeg',
-            '-ss', str(start_time),
-            '-i', video_path,
-            '-t', str(duration),
-            '-c', 'copy',  # Fast copy without re-encoding
-            '-y',
-            output_path
-        ]
-        subprocess.run(cmd, capture_output=True, check=True)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
+    from src.video_clipper import clip_video
+    return clip_video(video_path, start_time, duration, output_path)
 
 
-def prepare_clips(events: List[Dict[str, Any]], video_path: str, out_dir: str, padding: int = 5) -> List[str]:
+def prepare_clips(events: List[Dict[str, Any]], video_path: str, out_dir: str, padding_before: int = 5, padding_after: int = 5) -> List[str]:
     """Extract video clips for detected events.
     
     Args:
         events: List of event dictionaries with timestamp
         video_path: Source video path
         out_dir: Output directory for clips
-        padding: Seconds to include before/after event
+        padding_before: Seconds to include before event
+        padding_after: Seconds to include after event
     
     Returns:
         List of generated clip paths
@@ -122,8 +130,8 @@ def prepare_clips(events: List[Dict[str, Any]], video_path: str, out_dir: str, p
     
     for i, ev in enumerate(events):
         timestamp = ev.get("timestamp", ev.get("timestamp_seconds", 0))
-        start = max(0, timestamp - padding)
-        duration = padding * 2
+        start = max(0, timestamp - padding_before)
+        duration = padding_before + padding_after
         
         event_type = ev.get('type', 'event')
         clip_path = os.path.join(out_dir, f"clip_{i:03d}_{event_type}_{int(timestamp)}.mp4")
@@ -135,7 +143,7 @@ def prepare_clips(events: List[Dict[str, Any]], video_path: str, out_dir: str, p
 
 
 def concatenate_clips(clip_paths: List[str], output_path: str) -> bool:
-    """Concatenate multiple video clips into one video.
+    """Concatenate multiple video clips into one video using multiple methods.
     
     Args:
         clip_paths: List of clip file paths to concatenate
@@ -144,36 +152,6 @@ def concatenate_clips(clip_paths: List[str], output_path: str) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    if not clip_paths:
-        return False
-    
-    import tempfile
-    
-    try:
-        # Create a temporary file list for ffmpeg concat
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            list_file = f.name
-            for clip in clip_paths:
-                # Write in ffmpeg concat format
-                f.write(f"file '{os.path.abspath(clip)}'\n")
-        
-        # Use ffmpeg to concatenate
-        cmd = [
-            'ffmpeg',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', list_file,
-            '-c', 'copy',  # Fast copy without re-encoding
-            '-y',
-            output_path
-        ]
-        subprocess.run(cmd, capture_output=True, check=True)
-        
-        # Cleanup temp file
-        os.unlink(list_file)
-        return True
-        
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"Error concatenating clips: {e}")
-        return False
+    from src.video_clipper import concatenate_clips as concat_clips
+    return concat_clips(clip_paths, output_path)
 

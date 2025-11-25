@@ -21,19 +21,30 @@ sport: floorball
 # ============================================================
 
 # OpenAI model selection
-# Options: gpt-4o, gpt-4o-mini, gpt-4-turbo
+# Options: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-5-mini-2025-08-07
 openai_model: gpt-4o-mini
+
+# OpenAI Rate Limits (Tokens Per Minute / Requests Per Minute)
+# Used to automatically calculate optimal chunk delays
+# Free tier limits (update these based on your actual plan):
+openai_rate_limit_tpm: 500000  # Tokens per minute limit
+openai_rate_limit_rpm: 500     # Requests per minute limit
 
 # Anthropic model selection
 # Options: claude-3-5-sonnet-20241022, claude-3-opus-20240229
-anthropic_model: claude-3-5-sonnet-20241022
+# anthropic_model: claude-3-5-sonnet-20241022
+
+# Anthropic Rate Limits
+# anthropic_rate_limit_tpm: 80000
+# anthropic_rate_limit_rpm: 50
 
 # HuggingFace model selection
 huggingface_model: meta-llama/Llama-3.2-3B-Instruct
 
 # Gemini model selection
 # Options: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-flash-8b
-gemini_model: gemini-1.5-flash
+# Note: Don't use -latest suffix, just the base model name
+# gemini_model: gemini-2.5-flash
 
 # Ollama configuration
 ollama_endpoint: http://localhost:11434
@@ -54,6 +65,15 @@ cache_dir: .cache
 parallel_processing: false
 max_workers: 4
 
+# Goal reinforcement and training hooks
+goal_refinement_enabled: true
+goal_refinement_attempts: 2
+goal_refinement_window: 2.5
+goal_refinement_interval: 0.25
+goal_annotation_enabled: false
+goal_annotation_dir: annotations/goals
+goal_annotation_threshold: 0.7
+
 # ============================================================
 # Rate Limit Settings (for chunk parallel processing)
 # ============================================================
@@ -63,8 +83,21 @@ max_workers: 4
 # OpenAI Rate Limits:
 # - gpt-4o: 30,000 TPM / 500 RPM (Tokens/Requests Per Minute)
 # - gpt-4o-mini: 500,000 TPM / 500 RPM
-# Recommendation: Use 1-2 workers for gpt-4o, 3-4 for gpt-4o-mini
-max_workers_openai: 2
+# - gpt-5-mini: 500,000 TPM / 500 RPM
+# - gpt-5-nano: 200,000 TPM / 500 RPM
+# 
+# AUTO-CALCULATED: Based on openai_rate_limit_rpm setting above
+# Formula: max_workers = (RPM / 15) * 0.8
+#   - RPM / 15 = chunks per minute (each worker processes ~15 chunks/min)
+#   - * 0.8 = use 80% capacity for safety margin
+# 
+# Examples:
+#   500 RPM → (500/15)*0.8 = 26 workers
+#   200 RPM → (200/15)*0.8 = 10 workers
+#   50 RPM → (50/15)*0.8 = 2 workers
+# 
+# You can override by uncommenting and setting a specific value:
+# max_workers_openai: 2  # Optional override; default auto-calculates based on RPM (26 at 500 RPM)
 
 # Gemini Rate Limits:
 # - Free tier: 15 RPM (requests per minute)
@@ -110,11 +143,15 @@ sport_presets:
       - save
       - penalty
       - timeout
-    clip_padding_before: 5
-    clip_padding_after: 8
+      - unforced error
+    clip_padding_before: 10
+    clip_padding_after: 5
     time_dedup_window: 5.0
+    frame_interval: 0.5  # Extract 1 frame every 0.5 seconds (fast-paced sport, high sampling rate)
+    max_frames: 50  # Larger chunks to reduce API calls and stay within rate limits
+    hint: "Look for: ball crossing the goal line, net shaking, referee pointing to center, teammates celebrating near the crease, goalkeeper reactions, and players raising arms. Ignore scoreboard-only changes unless you also see the goal."
     keywords:
-      goal: [goal, score, scores]
+      goal: [goal, score, scores, net, goal light, celebrate, scoreboard]
       assist: [assist, pass, setup]
       shot: [shot, shoots, attempt]
       save: [save, saves, stopped, block]
@@ -134,8 +171,11 @@ sport_presets:
     clip_padding_before: 6
     clip_padding_after: 10
     time_dedup_window: 5.0
+    frame_interval: 10.0  # Standard sampling
+    max_frames: 20
+    hint: "Look for: puck crossing the goal line, red goal light, referee waving, player celebrations, and keeper reactions. Avoid relying on scoreboard flashes without the goal motion."
     keywords:
-      goal: [goal, score]
+      goal: [goal, score, scores, goal light, net]
       penalty: [penalty, 2 minutes, 5 minutes]
       icing: [icing]
       offside: [offside]
@@ -155,10 +195,11 @@ sport_presets:
     clip_padding_before: 8
     clip_padding_after: 12
     time_dedup_window: 5.0
+    frame_interval: 15.0  # Sample less frequently for slower-paced sport
+    max_frames: 15  # Fewer frames needed
+    hint: "Look for: ball crossing the goal line, net rippling, players celebrating, referee signals, and goalkeeper pushes. Scoreboard updates alone should not trigger a goal."
     keywords:
-      goal: [goal, score]
+      goal: [goal, score, net, celebrate]
       corner: [corner, corner kick]
       yellow_card: [yellow card, booking]
       red_card: [red card, sent off]
-log_level: INFO  # Options: DEBUG, INFO, WARNING, ERROR
-log_file: floorball_llm.log

@@ -11,11 +11,22 @@
         h1 { color: #1a1a1a; margin-bottom: 10px; }
         .subtitle { color: #666; margin-bottom: 30px; }
         .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; background: white; border-radius: 8px; padding: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .tab-button { flex: 1; padding: 12px 24px; background: transparent; border: none; border-radius: 4px; cursor: pointer; font-size: 15px; font-weight: 500; color: #666; transition: all 0.2s; }
+        .tab-button:hover { background: #f5f5f5; color: #333; }
+        .tab-button.active { background: #0066cc; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
         select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
         select:disabled, textarea:disabled, textarea[readonly], input[type="file"]:disabled { background: #f5f5f5; color: #999; cursor: not-allowed; opacity: 0.6; }
+        input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.6; }
+        input[type="number"]:disabled, input[type="text"]:disabled { background: #f5f5f5; color: #999; cursor: not-allowed; opacity: 0.6; }
         textarea { font-family: monospace; }
+        .timer-display { font-size: 14px; color: #0066cc; font-weight: bold; margin-top: 8px; font-family: monospace; }
+        .time-filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .time-filter-input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
         button { background: #0066cc; color: white; border: none; padding: 12px 24px; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: 500; }
         button:hover { background: #0052a3; }
         button:disabled { background: #ccc; cursor: not-allowed; }
@@ -69,32 +80,91 @@
         .highlight-result { margin-top: 12px; padding: 12px; background: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; }
         .highlight-result a { color: #2e7d32; font-weight: bold; text-decoration: none; }
         .highlight-result a:hover { text-decoration: underline; }
+        .info-box { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .info-box h3 { color: #1976d2; margin-bottom: 8px; font-size: 16px; }
+        .info-box ul { margin-left: 20px; color: #555; font-size: 14px; }
+        .info-box li { margin-bottom: 4px; }
+        .video-preview { margin-top: 20px; padding: 16px; background: #f9f9f9; border-radius: 6px; }
+        .video-preview video { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .video-info { margin-top: 10px; color: #666; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🏒 Floorball LLM Analysis</h1>
         <p class="subtitle">AI-powered game analysis | 
-            <a href="/settings" style="color: #0066cc; text-decoration: none; font-weight: 500;">⚙️ Settings</a> | 
-            <a href="/local" style="color: #0066cc; text-decoration: none; font-weight: 500;">💻 Local Mode (No Upload)</a>
+            <a href="/settings" style="color: #0066cc; text-decoration: none; font-weight: 500;">⚙️ Settings</a>
         </p>
         
         <div id="healthStatus"></div>
         
-        <div class="card">
-            <h2>🎥 Video Upload</h2>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('local')">💻 Local Mode (No Upload)</button>
+            <button class="tab-button" onclick="switchTab('upload')">🎥 Video Upload</button>
+        </div>
+        
+        <!-- Upload Tab Content -->
+        <div id="uploadTab" class="tab-content">
+            <div class="card">
+                <h2>🎥 Video Upload</h2>
             <div class="form-group">
                 <label for="videoFile">Upload Game Video</label>
                 <input type="file" id="videoFile" accept="video/*">
                 <small style="color: #666; display: block; margin-top: 4px;">Supports MP4, MKV, AVI up to 5GB</small>
             </div>
             <div class="form-group">
-                <label for="instructions">📝 What to Find</label>
-                <textarea id="instructions" rows="3" placeholder="Examples:
-- Find all goals and assists
-- Find all ball losses and turnovers
-- Find all saves and penalty shots">Find all goals, all ball losses, all saves</textarea>
-                <small style="color: #666; display: block; margin-top: 4px;">Describe what events you want to extract</small>
+                <label>⏱️ Video Time Range (Optional)</label>
+                <div class="time-filter-group">
+                    <div>
+                        <label style="font-size: 13px; color: #666; font-weight: normal;">From (HH:MM:SS or seconds)</label>
+                        <input type="text" id="timeFrom" class="time-filter-input" placeholder="00:00:00 or 0">
+                    </div>
+                    <div>
+                        <label style="font-size: 13px; color: #666; font-weight: normal;">To (HH:MM:SS or seconds)</label>
+                        <input type="text" id="timeTo" class="time-filter-input" placeholder="01:30:00 or 5400">
+                    </div>
+                </div>
+                <small style="color: #666; display: block;">Leave empty to analyze entire video. Use to skip unnecessary beginning/end.</small>
+            </div>
+            <div class="form-group">
+                <label>📋 Event Types to Find</label>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; padding: 12px; background: #f8f9fa; border-radius: 4px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="goal" checked style="margin-right: 6px;">
+                        <span>🥅 Goals</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="shot" style="margin-right: 6px;">
+                        <span>🎯 Shots</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="save" style="margin-right: 6px;">
+                        <span>🧤 Saves</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="assist" style="margin-right: 6px;">
+                        <span>🤝 Assists</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="penalty" style="margin-right: 6px;">
+                        <span>⚠️ Penalties</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="turnover" style="margin-right: 6px;">
+                        <span>🔄 Turnovers</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" class="upload-event-type-checkbox" value="timeout" style="margin-right: 6px;">
+                        <span>⏸️ Timeouts</span>
+                    </label>
+                </div>
+                <small style="color: #666; display: block; margin-bottom: 8px;">Select event types to search for, or use the text field below for custom instructions</small>
+            </div>
+            <div class="form-group">
+                <label for="instructions">📝 Additional Instructions (Optional)</label>
+                <textarea id="instructions" rows="2" placeholder="Add any additional context or specific instructions..."></textarea>
+                <small style="color: #666; display: block; margin-top: 4px;">Examples: "Focus on player #7", "Only second half", "Include celebrations"</small>
             </div>
             <button id="analyzeBtn" onclick="analyze()">🔍 Analyze Video</button>
             
@@ -104,7 +174,108 @@
                     <div class="progress-bar" id="progressBar" style="width: 0%;">0%</div>
                 </div>
                 <div class="progress-log" id="progressLog"></div>
+                <div class="timer-display" id="analysisTimer">⏱️ Elapsed: 0s</div>
                 <button id="stopBtn" class="stop-btn" onclick="stopAnalysis()">⛔ Stop Analysis</button>
+                <button id="resetBtn" class="stop-btn" onclick="resetUploadMode()" style="background:#6c757d;">🔄 Reset</button>
+            </div>
+            </div>
+        </div>
+        
+        <!-- Local Mode Tab Content -->
+        <div id="localTab" class="tab-content active">
+            <div class="card">
+                <h2>💻 Local Mode (No Upload)</h2>
+                
+                <div class="info-box">
+                    <h3>✨ How It Works</h3>
+                    <ul>
+                        <li><strong>Your video stays on your computer</strong> - no full upload needed</li>
+                        <li><strong>Frames extracted locally</strong> using your browser</li>
+                        <li><strong>Only frames sent to AI</strong> (~2-5MB instead of 2GB+)</li>
+                        <li><strong>Same analysis quality</strong> as full upload</li>
+                        <li><strong>100x faster upload</strong> and more privacy-friendly</li>
+                    </ul>
+                </div>
+
+                <div class="form-group">
+                    <label for="localVideoFile">📹 Select Video File</label>
+                    <input type="file" id="localVideoFile" accept="video/*" onchange="handleLocalVideoSelect(event)">
+                    <small style="color: #666; display: block; margin-top: 4px;">Video stays local - only frames are uploaded</small>
+                </div>
+
+                <div class="video-preview hidden" id="localVideoPreview">
+                    <video id="localVideoElement" controls></video>
+                    <p class="video-info" id="localVideoInfo"></p>
+                </div>
+
+                <div class="form-group">
+                    <label>⏱️ Video Time Range (Optional)</label>
+                    <div class="time-filter-group">
+                        <div>
+                            <label style="font-size: 13px; color: #666; font-weight: normal;">From (HH:MM:SS or seconds)</label>
+                            <input type="text" id="localTimeFrom" class="time-filter-input" placeholder="00:00:00 or 0">
+                        </div>
+                        <div>
+                            <label style="font-size: 13px; color: #666; font-weight: normal;">To (HH:MM:SS or seconds)</label>
+                            <input type="text" id="localTimeTo" class="time-filter-input" placeholder="01:30:00 or 5400">
+                        </div>
+                    </div>
+                    <small style="color: #666; display: block;">Leave empty to analyze entire video. Use to skip unnecessary beginning/end.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>📋 Event Types to Find</label>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; padding: 12px; background: #f8f9fa; border-radius: 4px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="goal" checked style="margin-right: 6px;">
+                            <span>🥅 Goals</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="shot" style="margin-right: 6px;">
+                            <span>🎯 Shots</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="save" style="margin-right: 6px;">
+                            <span>🧤 Saves</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="assist" style="margin-right: 6px;">
+                            <span>🤝 Assists</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="penalty" style="margin-right: 6px;">
+                            <span>⚠️ Penalties</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="turnover" style="margin-right: 6px;">
+                            <span>🔄 Turnovers</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" class="event-type-checkbox" value="timeout" style="margin-right: 6px;">
+                            <span>⏸️ Timeouts</span>
+                        </label>
+                    </div>
+                    <small style="color: #666; display: block; margin-bottom: 8px;">Select event types to search for, or use the text field below for custom instructions</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="localInstructions">📝 Additional Instructions (Optional)</label>
+                    <textarea id="localInstructions" rows="2" placeholder="Add any additional context or specific instructions..."></textarea>
+                    <small style="color: #666; display: block; margin-top: 4px;">Examples: "Focus on player #7", "Only second half", "Include celebrations"</small>
+                </div>
+
+                <button id="localAnalyzeBtn" onclick="analyzeLocal()">🔍 Analyze Video (Local Mode)</button>
+
+                <div id="localProgressContainer" class="progress-container hidden">
+                    <div class="progress-step" id="localProgressStep">Initializing...</div>
+                    <div class="progress-bar-wrapper">
+                        <div class="progress-bar" id="localProgressBar" style="width: 0%">0%</div>
+                    </div>
+                    <div class="progress-log" id="localProgressLog"></div>
+                    <div class="timer-display" id="localAnalysisTimer">⏱️ Elapsed: 0s</div>
+                    <button id="localStopBtn" class="stop-btn" onclick="stopLocalAnalysis()" style="margin-top:12px;">⛔ Stop Analysis</button>
+                    <button id="localResetBtn" class="stop-btn" onclick="resetLocalMode()" style="margin-top:12px; background:#6c757d;">🔄 Reset</button>
+                </div>
             </div>
         </div>
         
@@ -120,16 +291,1270 @@
     </div>
     
     <script>
+        // Global variables
         let currentConfig = {};
         let currentTaskId = null;
         let currentAnalysisResult = null;
         let currentEventSource = null;
+        let localVideoFile = null;
+        let localVideoElement = null;
+        let localAnalysisCancelled = false;
+        let selectedEvents = new Set();
+        let includeShortDescription = true;
+        let analysisStartTime = null;
+        let analysisTimerInterval = null;
+        let localAnalysisStartTime = null;
+        let localAnalysisTimerInterval = null;
+        
+        // Parse time string (HH:MM:SS or seconds) to seconds
+        function parseTimeToSeconds(timeStr) {
+            if (!timeStr || timeStr.trim() === '') return null;
+            timeStr = timeStr.trim();
+            
+            // If it's just a number, treat as seconds
+            if (/^\d+(\.\d+)?$/.test(timeStr)) {
+                return parseFloat(timeStr);
+            }
+            
+            // Parse HH:MM:SS format
+            const parts = timeStr.split(':').map(p => parseFloat(p));
+            if (parts.length === 3) {
+                return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            } else if (parts.length === 2) {
+                return parts[0] * 60 + parts[1];
+            } else if (parts.length === 1) {
+                return parts[0];
+            }
+            return null;
+        }
+        
+        // Start timer
+        function startAnalysisTimer(isLocal = false) {
+            const timerElement = document.getElementById(isLocal ? 'localAnalysisTimer' : 'analysisTimer');
+            const startTime = new Date();
+            
+            if (isLocal) {
+                localAnalysisStartTime = startTime;
+                if (localAnalysisTimerInterval) clearInterval(localAnalysisTimerInterval);
+                localAnalysisTimerInterval = setInterval(() => {
+                    const elapsed = Math.floor((new Date() - localAnalysisStartTime) / 1000);
+                    timerElement.textContent = `⏱️ Elapsed: ${elapsed}s`;
+                }, 1000);
+            } else {
+                analysisStartTime = startTime;
+                if (analysisTimerInterval) clearInterval(analysisTimerInterval);
+                analysisTimerInterval = setInterval(() => {
+                    const elapsed = Math.floor((new Date() - analysisStartTime) / 1000);
+                    timerElement.textContent = `⏱️ Elapsed: ${elapsed}s`;
+                }, 1000);
+            }
+        }
+        
+        // Stop timer
+        function stopAnalysisTimer(isLocal = false) {
+            if (isLocal) {
+                if (localAnalysisTimerInterval) {
+                    clearInterval(localAnalysisTimerInterval);
+                    localAnalysisTimerInterval = null;
+                }
+            } else {
+                if (analysisTimerInterval) {
+                    clearInterval(analysisTimerInterval);
+                    analysisTimerInterval = null;
+                }
+            }
+        }
+        
+        function stopLocalAnalysis() {
+            localAnalysisCancelled = true;
+            document.getElementById('localStopBtn').disabled = true;
+            updateLocalProgress(100, '⛔ Analysis stopped by user.');
+        }
+        
+        function resetLocalMode() {
+            // Stop analysis if running
+            localAnalysisCancelled = true;
+            
+            // Clear video
+            const videoInput = document.getElementById('localVideoFile');
+            videoInput.value = '';
+            localVideoFile = null;
+            localVideoElement = null;
+            
+            // Hide preview
+            document.getElementById('localVideoPreview').classList.add('hidden');
+            
+            // Reset checkboxes - check only goals
+            document.querySelectorAll('.event-type-checkbox').forEach(cb => {
+                cb.checked = (cb.value === 'goal');
+            });
+            
+            // Clear instructions
+            document.getElementById('localInstructions').value = '';
+            
+            // Reset progress
+            document.getElementById('localProgressContainer').classList.add('hidden');
+            document.getElementById('localProgressLog').innerHTML = '';
+            document.getElementById('localProgressBar').style.width = '0%';
+            document.getElementById('localProgressBar').textContent = '0%';
+            
+            // Reset buttons
+            document.getElementById('localAnalyzeBtn').disabled = false;
+            document.getElementById('localAnalyzeBtn').textContent = '🔍 Analyze Video (Local Mode)';
+            document.getElementById('localStopBtn').style.display = 'none';
+            
+            // Hide results
+            document.getElementById('results').classList.add('hidden');
+            currentAnalysisResult = null;
+            selectedEvents.clear();
+        }
+        
+        // Tab switching
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.tab-button[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            if (tabName === 'upload') {
+                document.getElementById('uploadTab').classList.add('active');
+            } else if (tabName === 'local') {
+                document.getElementById('localTab').classList.add('active');
+            }
+            // Hide results when switching tabs
+            document.getElementById('results').classList.add('hidden');
+        }
+        
+        // Local video handling
+        function handleLocalVideoSelect(event) {
+            localVideoFile = event.target.files[0];
+            if (localVideoFile) {
+                const preview = document.getElementById('localVideoPreview');
+                const video = document.getElementById('localVideoElement');
+                const info = document.getElementById('localVideoInfo');
+                
+                video.src = URL.createObjectURL(localVideoFile);
+                localVideoElement = video;
+                
+                video.onloadedmetadata = () => {
+                    const duration = Math.round(video.duration);
+                    const sizeMB = (localVideoFile.size / 1024 / 1024).toFixed(2);
+                    info.textContent = `Duration: ${duration}s | Size: ${sizeMB}MB | Name: ${localVideoFile.name}`;
+                    preview.classList.remove('hidden');
+                };
+            }
+        }
+        
+        // Local analysis function
+        async function analyzeLocal() {
+            if (!localVideoFile || !localVideoElement) {
+                alert('Please select a video file first');
+                return;
+            }
+
+            const btn = document.getElementById('localAnalyzeBtn');
+            const videoInput = document.getElementById('localVideoFile');
+            const instructions = document.getElementById('localInstructions');
+            const progressContainer = document.getElementById('localProgressContainer');
+            const progressBar = document.getElementById('localProgressBar');
+            const progressStep = document.getElementById('localProgressStep');
+            const progressLog = document.getElementById('localProgressLog');
+            const results = document.getElementById('results');
+
+            // Disable all form inputs
+            btn.disabled = true;
+            videoInput.disabled = true;
+            instructions.readOnly = true;
+            document.getElementById('localTimeFrom').disabled = true;
+            document.getElementById('localTimeTo').disabled = true;
+            document.querySelectorAll('.event-type-checkbox').forEach(cb => cb.disabled = true);
+            
+            btn.textContent = '⏳ Processing...';
+            progressContainer.classList.remove('hidden');
+            results.classList.add('hidden');
+            progressLog.innerHTML = '';
+            document.getElementById('localStopBtn').disabled = false;
+            document.getElementById('localStopBtn').style.display = 'block';
+            localAnalysisCancelled = false;
+            
+            // Start timer
+            startAnalysisTimer(true);
+
+            try {
+                // Step 0: Upload video file for clip generation (but don't wait for processing)
+                updateLocalProgress(5, 'Uploading video for clip generation...');
+                const formData = new FormData();
+                formData.append('video', localVideoFile);
+                
+                const uploadResponse = await fetch('/api/video/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!uploadResponse.ok) {
+                    throw new Error('Failed to upload video');
+                }
+                
+                const uploadData = await uploadResponse.json();
+                currentTaskId = uploadData.task_id;
+                console.log(`[${new Date().toLocaleTimeString()}] Video uploaded with task_id: ${currentTaskId}`);
+                
+                // Step 1: Extract frames locally
+                const startTime = new Date();
+                updateLocalProgress(10, 'Extracting frames from video...');
+                console.log(`[${startTime.toLocaleTimeString()}] === Starting Local Video Analysis ===`);
+                console.log(`[${startTime.toLocaleTimeString()}] Video duration: ${localVideoElement.duration.toFixed(2)}s`);
+                
+                // Get time range filters
+                const fromSeconds = parseTimeToSeconds(document.getElementById('localTimeFrom').value);
+                const toSeconds = parseTimeToSeconds(document.getElementById('localTimeTo').value);
+                const startOffset = fromSeconds || 0;
+                const endOffset = toSeconds || localVideoElement.duration;
+                
+                if (startOffset > 0 || endOffset < localVideoElement.duration) {
+                    console.log(`[${new Date().toLocaleTimeString()}] Time filter: ${startOffset.toFixed(1)}s to ${endOffset.toFixed(1)}s`);
+                    updateLocalProgress(10, `Extracting frames from ${startOffset.toFixed(1)}s to ${endOffset.toFixed(1)}s...`);
+                }
+                
+                // Get sport config to determine frame interval
+                const sport = currentConfig.sport || 'floorball';
+                const sportPreset = currentConfig.sport_presets?.[sport];
+                const frameInterval = sportPreset?.frame_interval || 2;
+                console.log(`[${new Date().toLocaleTimeString()}] Sport: ${sport}, Frame interval: ${frameInterval}s`);
+                
+                const frames = [];
+                const extractedFrames = await extractFramesFromVideo(localVideoElement, frameInterval, startOffset, endOffset);
+                for (let i = 0; i < extractedFrames.length; i++) {
+                    if (localAnalysisCancelled) {
+                        updateLocalProgress(100, '⛔ Analysis stopped by user during frame extraction.');
+                        btn.disabled = false;
+                        videoInput.disabled = false;
+                        instructions.readOnly = false;
+                        btn.textContent = '🔍 Analyze Video (Local Mode)';
+                        return;
+                    }
+                    frames.push(extractedFrames[i]);
+                }
+                const extractTime = ((new Date() - startTime) / 1000).toFixed(1);
+                console.log(`[${new Date().toLocaleTimeString()}] Extracted ${frames.length} frames in ${extractTime}s`);
+                updateLocalProgress(30, `Extracted ${frames.length} frames locally (${frameInterval}s interval)`);
+
+                // Step 2: Prepare frames for upload
+                updateLocalProgress(40, 'Preparing frames for AI analysis...');
+                
+                // Build instructions from checkboxes and text field
+                const selectedEventTypes = Array.from(document.querySelectorAll('.event-type-checkbox:checked'))
+                    .map(cb => cb.value);
+                const additionalInstructions = instructions.value.trim();
+                
+                let finalInstructions = '';
+                if (selectedEventTypes.length > 0) {
+                    finalInstructions = `Find all ${selectedEventTypes.join(', ')}`;
+                }
+                if (additionalInstructions) {
+                    finalInstructions = finalInstructions 
+                        ? `${finalInstructions}. ${additionalInstructions}` 
+                        : additionalInstructions;
+                }
+                
+                if (!finalInstructions) {
+                    alert('Please select at least one event type or provide instructions');
+                    btn.disabled = false;
+                    videoInput.disabled = false;
+                    instructions.readOnly = false;
+                    btn.textContent = '🔍 Analyze Video (Local Mode)';
+                    return;
+                }
+                
+                console.log(`[${new Date().toLocaleTimeString()}] Instructions: ${finalInstructions}`);
+                
+                const frameData = frames.map((frame, idx) => ({
+                    index: idx,
+                    timestamp: frame.timestamp,
+                    data: frame.dataUrl
+                }));
+
+                // Step 3: Send ALL frames to backend for parallel processing with real-time updates
+                const backend = currentConfig.llm_backend || 'simulated';
+                console.log(`[${new Date().toLocaleTimeString()}] Backend: ${backend}`);
+                console.log(`[${new Date().toLocaleTimeString()}] Sending ${frameData.length} frames for parallel analysis...`);
+                updateLocalProgress(20, `Analyzing ${frameData.length} frames with AI backend...`);
+                
+                const analysisStart = new Date();
+                
+                // Use EventSource for streaming progress updates
+                const eventSource = new EventSource('/api/analyze/frames/stream');
+                let allEvents = [];
+                let totalChunks = 0;
+                
+                // Send the request data via POST
+                fetch('/api/analyze/frames/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        frames: frameData,
+                        instructions: finalInstructions,
+                        backend: currentConfig.llm_backend || 'simulated',
+                        sport: sport,
+                        video_duration: localVideoElement.duration
+                    })
+                }).then(response => {
+                    if (!response.ok) throw new Error('Stream failed to start');
+                    
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    
+                    function readStream() {
+                        reader.read().then(({ done, value }) => {
+                            if (done) {
+                                console.log('Stream complete');
+                                return;
+                            }
+                            
+                            const text = decoder.decode(value);
+                            const lines = text.split('\n');
+                            
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data = JSON.parse(line.substring(6));
+                                        
+                                        if (localAnalysisCancelled) {
+                                            reader.cancel();
+                                            updateLocalProgress(100, '⛔ Analysis stopped by user.');
+                                            btn.disabled = false;
+                                            videoInput.disabled = false;
+                                            instructions.readOnly = false;
+                                            btn.textContent = '🔍 Analyze Video (Local Mode)';
+                                            return;
+                                        }
+                                        
+                                        if (data.type === 'info') {
+                                            totalChunks = data.total_chunks;
+                                            console.log(`[${new Date().toLocaleTimeString()}] Processing ${data.total_chunks} chunks with ${data.workers} parallel workers`);
+                                        } else if (data.type === 'chunk_complete') {
+                                            const progress = 20 + Math.round(data.progress * 0.8);
+                                            console.log(`[${new Date().toLocaleTimeString()}] Chunk ${data.chunk}/${data.total}: ${data.events} events (${data.completed}/${data.total} complete)`);
+                                            updateLocalProgress(progress, `Processing: ${data.completed}/${data.total} chunks complete...`);
+                                        } else if (data.type === 'chunk_error') {
+                                            console.error(`[${new Date().toLocaleTimeString()}] Chunk ${data.chunk} error: ${data.error}`);
+                                        } else if (data.type === 'complete') {
+                                            allEvents = data.events;
+                                            const totalTime = ((new Date() - analysisStart) / 1000).toFixed(1);
+                                            console.log(`[${new Date().toLocaleTimeString()}] === Analysis Complete ===`);
+                                            console.log(`[${new Date().toLocaleTimeString()}] Total events: ${allEvents.length}`);
+                                            console.log(`[${new Date().toLocaleTimeString()}] Total time: ${totalTime}s`);
+                                            console.log(`[${new Date().toLocaleTimeString()}] Parallel workers: ${data.meta.workers}, Chunks: ${data.meta.chunks}`);
+                                            
+                                            currentAnalysisResult = {
+                                                events: allEvents,
+                                                meta: { 
+                                                    frames_analyzed: frameData.length,
+                                                    backend: backend,
+                                                    workers: data.meta.workers,
+                                                    chunks: data.meta.chunks
+                                                },
+                                                timestamps: allEvents.map(e => e.timestamp)
+                                            };
+                                            updateLocalProgress(100, `Complete! Found ${allEvents.length} events in ${totalTime}s`);
+                                            displayLocalResults(currentAnalysisResult);
+                                            document.getElementById('localStopBtn').style.display = 'none';
+                                            stopAnalysisTimer(true);
+                                            
+                                            btn.disabled = false;
+                                            videoInput.disabled = false;
+                                            instructions.readOnly = false;
+                                            document.getElementById('localTimeFrom').disabled = false;
+                                            document.getElementById('localTimeTo').disabled = false;
+                                            document.querySelectorAll('.event-type-checkbox').forEach(cb => cb.disabled = false);
+                                            btn.textContent = '🔍 Analyze Video (Local Mode)';
+                                        } else if (data.type === 'error') {
+                                            throw new Error(data.error);
+                                        }
+                                    } catch (e) {
+                                        console.error('Error parsing stream data:', e);
+                                    }
+                                }
+                            }
+                            
+                            readStream();
+                        }).catch(error => {
+                            console.error('Stream read error:', error);
+                            updateLocalProgress(100, `Error: ${error.message}`);
+                            stopAnalysisTimer(true);
+                            btn.disabled = false;
+                            videoInput.disabled = false;
+                            instructions.readOnly = false;
+                            document.getElementById('localTimeFrom').disabled = false;
+                            document.getElementById('localTimeTo').disabled = false;
+                            document.querySelectorAll('.event-type-checkbox').forEach(cb => cb.disabled = false);
+                            btn.textContent = '🔍 Analyze Video (Local Mode)';
+                        });
+                    }
+                    
+                    readStream();
+                }).catch(error => {
+                    console.error('Analysis error:', error);
+                    updateLocalProgress(100, `Error: ${error.message}`);
+                    stopAnalysisTimer(true);
+                    btn.disabled = false;
+                    videoInput.disabled = false;
+                    instructions.readOnly = false;
+                    document.getElementById('localTimeFrom').disabled = false;
+                    document.getElementById('localTimeTo').disabled = false;
+                    document.querySelectorAll('.event-type-checkbox').forEach(cb => cb.disabled = false);
+                    btn.textContent = '🔍 Analyze Video (Local Mode)';
+                });
+                
+                return; // Exit here since streaming handles everything
+
+            } catch (error) {
+                console.error(error);
+                alert('Error: ' + error.message);
+                updateLocalProgress(0, 'Error: ' + error.message);
+                stopAnalysisTimer(true);
+            } finally {
+                btn.disabled = false;
+                videoInput.disabled = false;
+                instructions.readOnly = false;
+                document.getElementById('localTimeFrom').disabled = false;
+                document.getElementById('localTimeTo').disabled = false;
+                document.querySelectorAll('.event-type-checkbox').forEach(cb => cb.disabled = false);
+                btn.textContent = '🔍 Analyze Video (Local Mode)';
+            }
+        }
+
+        async function extractFramesFromVideo(video, intervalSeconds, startTime = 0, endTime = null) {
+            const frames = [];
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 640;
+            canvas.height = 360;
+
+            const duration = endTime || video.duration;
+            const effectiveStart = startTime || 0;
+            const numFrames = Math.floor((duration - effectiveStart) / intervalSeconds);
+
+            for (let i = 0; i < numFrames; i++) {
+                const timestamp = effectiveStart + (i * intervalSeconds);
+                if (timestamp >= duration) break;
+                
+                video.currentTime = timestamp;
+                
+                await new Promise(resolve => {
+                    video.onseeked = () => {
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                        frames.push({ timestamp, dataUrl });
+                        updateLocalProgress(10 + (i / numFrames) * 20, `Extracting frame ${i + 1}/${numFrames}...`);
+                        resolve();
+                    };
+                });
+            }
+
+            return frames;
+        }
+
+        function updateLocalProgress(percent, message) {
+            const progressBar = document.getElementById('localProgressBar');
+            const progressStep = document.getElementById('localProgressStep');
+            const progressLog = document.getElementById('localProgressLog');
+            
+            progressBar.style.width = percent + '%';
+            progressBar.textContent = Math.round(percent) + '%';
+            progressStep.textContent = message;
+            
+            const entry = document.createElement('div');
+            entry.className = 'progress-log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            progressLog.appendChild(entry);
+            progressLog.scrollTop = progressLog.scrollHeight;
+        }
+
+        function displayLocalResults(data) {
+            const results = document.getElementById('results');
+            const meta = data.meta || {};
+            
+            // Show metrics
+            document.getElementById('metrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">${data.events.length}</div>
+                    <div class="metric-label">Events Found</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${meta.frames_analyzed || 0}</div>
+                    <div class="metric-label">Frames Analyzed</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${meta.backend || 'N/A'}</div>
+                    <div class="metric-label">AI Backend</div>
+                </div>
+            `;
+            
+            // Show timestamps for local clipping
+            if (data.timestamps && data.timestamps.length > 0) {
+                const timestampsList = data.timestamps.map(t => {
+                    const hours = Math.floor(t / 3600);
+                    const mins = Math.floor((t % 3600) / 60);
+                    const secs = Math.floor(t % 60);
+                    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                }).join(', ');
+                
+                document.getElementById('metrics').innerHTML += `
+                    <div class="metric" style="grid-column: 1 / -1;">
+                        <div style="font-size: 14px; font-weight: bold; margin-bottom: 8px;">⏱️ Timestamps for Local Clipping:</div>
+                        <div style="font-family: monospace; font-size: 12px; background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 12px;">${timestampsList}</div>
+                        <button onclick="downloadTimestamps()" style="background: #666; padding: 8px 16px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 13px;">
+                            ⬇️ Download Timestamps (JSON)
+                        </button>
+                        <button onclick="showClipInstructions()" style="background: #0066cc; padding: 8px 16px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 13px; margin-left: 8px;">
+                            📖 How to Generate Clips Locally
+                        </button>
+                    </div>
+                `;
+            }
+            
+            // Show events table
+            if (data.events.length > 0) {
+                // Initialize all events as selected
+                selectedEvents = new Set(data.events.map((e, idx) => idx));
+                
+                const eventsHtml = `
+                    <h3>Detected Events</h3>
+                    <div style="margin-bottom: 16px; padding: 12px; background: #f8f9fa; border-radius: 4px;">
+                        <button onclick="selectAllEvents(true)" style="background: #28a745; padding: 6px 12px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 12px; margin-right: 8px;">✓ Select All</button>
+                        <button onclick="selectAllEvents(false)" style="background: #dc3545; padding: 6px 12px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 12px; margin-right: 8px;">✗ Deselect All</button>
+                        <button onclick="clearAllFilters()" class="clear-filters-btn">🔄 Clear Filters</button>
+                        <br><br>
+                        <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd;">
+                            <strong style="font-size: 13px; color: #333;">Download Options:</strong>
+                            <button onclick="downloadSelectedTimestamps()" style="background: #007bff; padding: 6px 12px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 12px; margin-left: 8px; margin-right: 8px;">📄 Timestamps (TXT)</button>
+                            <button onclick="generateAndDownloadSelectedClips()" id="generateDownloadBtn" style="background: #17a2b8; padding: 6px 12px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 12px; margin-right: 8px;">🎬 Individual Clips</button>
+                            <button onclick="generateAndDownloadHighlightReel()" id="highlightReelBtn" style="background: #6f42c1; padding: 6px 12px; border-radius: 4px; border: none; color: white; cursor: pointer; font-size: 12px;">✨ Combined Highlight Reel</button>
+                        </div>
+                        <label style="margin-left: 16px; font-size: 13px;">
+                            <input type="checkbox" id="includeDescriptionCheckbox" checked onchange="includeShortDescription = this.checked" style="margin-right: 4px;">
+                            Include short description
+                        </label>
+                        <span style="margin-left: 16px; font-size: 13px; color: #666;">Selected: <strong id="selectedCount">${data.events.length}</strong>/${data.events.length}</span>
+                        <span id="localFilteredCount" style="margin-left: 12px; font-size: 13px; color: #666;"></span>
+                    </div>
+                    <table class="events-table" id="eventsTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" id="selectAllCheckbox" checked title="Select All / None" onchange="toggleEventSelectAll()">
+                                </th>
+                                <th>Type</th>
+                                <th>Time</th>
+                                <th>Description</th>
+                                <th>Confidence</th>
+                            </tr>
+                            <tr class="filter-row">
+                                <th></th>
+                                <th><input type="text" class="filter-input" id="filterType" placeholder="Filter type..." oninput="filterEvents()"></th>
+                                <th><input type="text" class="filter-input" id="filterTime" placeholder="Filter time..." oninput="filterEvents()"></th>
+                                <th><input type="text" class="filter-input" id="filterDescription" placeholder="Filter description..." oninput="filterEvents()"></th>
+                                <th><input type="text" class="filter-input" id="filterConfidence" placeholder="Filter..." oninput="filterEvents()"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsTableBody">
+                            ${data.events.map((e, idx) => `
+                                <tr class="event-row" data-event-index="${idx}">
+                                    <td><input type="checkbox" class="event-checkbox" data-index="${idx}" checked onchange="toggleEventSelection(${idx})" style="cursor: pointer;"></td>
+                                    <td><span class="event-badge event-${e.type}">${e.type.toUpperCase()}</span></td>
+                                    <td>${Math.floor(e.timestamp / 60)}:${String(Math.floor(e.timestamp % 60)).padStart(2, '0')}</td>
+                                    <td>${e.description || 'N/A'}</td>
+                                    <td>${e.confidence ? (e.confidence * 100).toFixed(0) + '%' : 'N/A'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                document.getElementById('events').innerHTML = eventsHtml;
+            } else {
+                document.getElementById('events').innerHTML = '<p>No events detected.</p>';
+            }
+            
+            results.classList.remove('hidden');
+        }
+
+        function toggleEventSelection(index) {
+            if (selectedEvents.has(index)) {
+                selectedEvents.delete(index);
+            } else {
+                selectedEvents.add(index);
+            }
+            updateSelectedCount();
+        }
+
+        function toggleEventSelectAll() {
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            const isChecked = selectAllCheckbox.checked;
+            
+            // Get all visible (filtered) event rows
+            const rows = document.querySelectorAll('#eventsTableBody .event-row');
+            const visibleIndices = [];
+            
+            rows.forEach((row, idx) => {
+                if (row.style.display !== 'none') {
+                    visibleIndices.push(idx);
+                }
+            });
+            
+            // Toggle selection only for visible events
+            const checkboxes = document.querySelectorAll('.event-checkbox');
+            visibleIndices.forEach(idx => {
+                if (checkboxes[idx]) {
+                    checkboxes[idx].checked = isChecked;
+                    if (isChecked) {
+                        selectedEvents.add(idx);
+                    } else {
+                        selectedEvents.delete(idx);
+                    }
+                }
+            });
+            
+            updateSelectedCount();
+        }
+        
+        function selectAllEvents(select) {
+            const checkboxes = document.querySelectorAll('.event-checkbox');
+            checkboxes.forEach((cb, idx) => {
+                cb.checked = select;
+                if (select) {
+                    selectedEvents.add(idx);
+                } else {
+                    selectedEvents.delete(idx);
+                }
+            });
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const countEl = document.getElementById('selectedCount');
+            if (countEl) {
+                countEl.textContent = selectedEvents.size;
+            }
+        }
+        
+        function getVisibleEventIndices() {
+            const rows = document.querySelectorAll('#eventsTableBody .event-row');
+            const visibleIndices = [];
+            rows.forEach((row, idx) => {
+                if (row.style.display !== 'none') {
+                    visibleIndices.push(idx);
+                }
+            });
+            return visibleIndices;
+        }
+
+        function filterEvents() {
+            const typeFilter = document.getElementById('filterType')?.value.toLowerCase() || '';
+            const timeFilter = document.getElementById('filterTime')?.value.toLowerCase() || '';
+            const descFilter = document.getElementById('filterDescription')?.value.toLowerCase() || '';
+            const confFilter = document.getElementById('filterConfidence')?.value.trim() || '';
+            
+            const rows = document.querySelectorAll('#eventsTableBody .event-row');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const type = row.querySelector('.event-badge')?.textContent.toLowerCase() || '';
+                const time = row.querySelectorAll('td')[2]?.textContent.toLowerCase() || '';
+                const desc = row.querySelectorAll('td')[3]?.textContent.toLowerCase() || '';
+                const confText = row.querySelectorAll('td')[4]?.textContent || '';
+                
+                const typeMatch = type.includes(typeFilter);
+                const timeMatch = time.includes(timeFilter);
+                const descMatch = desc.includes(descFilter.toLowerCase());
+                
+                // Parse confidence value (e.g., "85%" -> 85)
+                const confValue = parseFloat(confText.replace('%', ''));
+                let confMatch = true;
+                
+                if (confFilter) {
+                    // Check for comparison operators
+                    if (confFilter.startsWith('>=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue >= threshold;
+                    } else if (confFilter.startsWith('<=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue <= threshold;
+                    } else if (confFilter.startsWith('>')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue > threshold;
+                    } else if (confFilter.startsWith('<')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue < threshold;
+                    } else {
+                        // Default: exact match or contains
+                        confMatch = confText.toLowerCase().includes(confFilter.toLowerCase());
+                    }
+                }
+                
+                if (typeMatch && timeMatch && descMatch && confMatch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Update filter status indicators
+            updateFilterStatus('filterType', typeFilter);
+            updateFilterStatus('filterTime', timeFilter);
+            updateFilterStatus('filterDescription', descFilter);
+            updateFilterStatus('filterConfidence', confFilter);
+            
+            // Update filtered count
+            const totalCount = rows.length;
+            const countEl = document.getElementById('localFilteredCount');
+            if (countEl) {
+                if (visibleCount < totalCount) {
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} events`;
+                    countEl.style.color = '#007bff';
+                    countEl.style.fontWeight = 'bold';
+                } else {
+                    countEl.textContent = '';
+                }
+            }
+        }
+
+        function filterUploadEvents() {
+            const typeFilter = document.getElementById('uploadFilterType')?.value.toLowerCase() || '';
+            const timeFilter = document.getElementById('uploadFilterTime')?.value.toLowerCase() || '';
+            const descFilter = document.getElementById('uploadFilterDescription')?.value.toLowerCase() || '';
+            const confFilter = document.getElementById('uploadFilterConfidence')?.value.trim() || '';
+            
+            const rows = document.querySelectorAll('#uploadEventsTableBody tr');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length === 0) return;
+                
+                const type = cells[0]?.textContent.toLowerCase() || '';
+                const time = cells[1]?.textContent.toLowerCase() || '';
+                const desc = cells[2]?.textContent.toLowerCase() || '';
+                const confText = cells[3]?.textContent || '';
+                
+                const typeMatch = type.includes(typeFilter);
+                const timeMatch = time.includes(timeFilter);
+                const descMatch = desc.includes(descFilter.toLowerCase());
+                
+                // Parse confidence value (e.g., "85%" -> 85)
+                const confValue = parseFloat(confText.replace('%', ''));
+                let confMatch = true;
+                
+                if (confFilter) {
+                    // Check for comparison operators
+                    if (confFilter.startsWith('>=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue >= threshold;
+                    } else if (confFilter.startsWith('<=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue <= threshold;
+                    } else if (confFilter.startsWith('>')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue > threshold;
+                    } else if (confFilter.startsWith('<')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue < threshold;
+                    } else {
+                        // Default: exact match or contains
+                        confMatch = confText.toLowerCase().includes(confFilter.toLowerCase());
+                    }
+                }
+                
+                if (typeMatch && timeMatch && descMatch && confMatch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Update filter status indicators
+            updateFilterStatus('uploadFilterType', typeFilter);
+            updateFilterStatus('uploadFilterTime', timeFilter);
+            updateFilterStatus('uploadFilterDescription', descFilter);
+            updateFilterStatus('uploadFilterConfidence', confFilter);
+            
+            // Update filtered count
+            const totalCount = rows.length;
+            const countEl = document.getElementById('filteredCount');
+            if (countEl) {
+                if (visibleCount < totalCount) {
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} events`;
+                    countEl.style.color = '#007bff';
+                    countEl.style.fontWeight = 'bold';
+                } else {
+                    countEl.textContent = '';
+                }
+            }
+        }
+
+        function updateFilterStatus(inputId, filterValue) {
+            const input = document.getElementById(inputId);
+            if (input) {
+                if (filterValue) {
+                    input.classList.add('filter-active');
+                } else {
+                    input.classList.remove('filter-active');
+                }
+            }
+        }
+
+        function clearAllFilters() {
+            // Clear local mode filters
+            ['filterType', 'filterTime', 'filterDescription', 'filterConfidence'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.value = '';
+                    input.classList.remove('filter-active');
+                }
+            });
+            
+            // Clear upload mode filters
+            ['uploadFilterType', 'uploadFilterTime', 'uploadFilterDescription', 'uploadFilterConfidence'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.value = '';
+                    input.classList.remove('filter-active');
+                }
+            });
+            
+            // Re-run filters to show all rows
+            filterEvents();
+            filterUploadEvents();
+            
+            console.log('[Filter] All filters cleared');
+        }
+
+        function filterEvents() {
+            const typeFilter = document.getElementById('filterType')?.value.toLowerCase() || '';
+            const timeFilter = document.getElementById('filterTime')?.value.toLowerCase() || '';
+            const descFilter = document.getElementById('filterDescription')?.value.toLowerCase() || '';
+            const confFilter = document.getElementById('filterConfidence')?.value.trim() || '';
+            
+            const rows = document.querySelectorAll('#eventsTableBody .event-row');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const type = row.querySelector('.event-badge')?.textContent.toLowerCase() || '';
+                const time = row.querySelectorAll('td')[2]?.textContent.toLowerCase() || '';
+                const desc = row.querySelectorAll('td')[3]?.textContent.toLowerCase() || '';
+                const confText = row.querySelectorAll('td')[4]?.textContent || '';
+                
+                const typeMatch = type.includes(typeFilter);
+                const timeMatch = time.includes(timeFilter);
+                const descMatch = desc.includes(descFilter.toLowerCase());
+                
+                // Parse confidence value (e.g., "85%" -> 85)
+                const confValue = parseFloat(confText.replace('%', ''));
+                let confMatch = true;
+                
+                if (confFilter) {
+                    // Check for comparison operators
+                    if (confFilter.startsWith('>=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue >= threshold;
+                    } else if (confFilter.startsWith('<=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue <= threshold;
+                    } else if (confFilter.startsWith('>')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue > threshold;
+                    } else if (confFilter.startsWith('<')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue < threshold;
+                    } else {
+                        // Default: exact match or contains
+                        confMatch = confText.toLowerCase().includes(confFilter.toLowerCase());
+                    }
+                }
+                
+                if (typeMatch && timeMatch && descMatch && confMatch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Update filter status indicators
+            updateFilterStatus('filterType', typeFilter);
+            updateFilterStatus('filterTime', timeFilter);
+            updateFilterStatus('filterDescription', descFilter);
+            updateFilterStatus('filterConfidence', confFilter);
+            
+            // Update filtered count
+            const totalCount = rows.length;
+            const countEl = document.getElementById('localFilteredCount');
+            if (countEl) {
+                if (visibleCount < totalCount) {
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} events`;
+                    countEl.style.color = '#007bff';
+                    countEl.style.fontWeight = 'bold';
+                } else {
+                    countEl.textContent = '';
+                }
+            }
+        }
+
+        function filterUploadEvents() {
+            const typeFilter = document.getElementById('uploadFilterType')?.value.toLowerCase() || '';
+            const timeFilter = document.getElementById('uploadFilterTime')?.value.toLowerCase() || '';
+            const descFilter = document.getElementById('uploadFilterDescription')?.value.toLowerCase() || '';
+            const confFilter = document.getElementById('uploadFilterConfidence')?.value.trim() || '';
+            
+            const rows = document.querySelectorAll('#uploadEventsTableBody tr');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length === 0) return;
+                
+                const type = cells[0]?.textContent.toLowerCase() || '';
+                const time = cells[1]?.textContent.toLowerCase() || '';
+                const desc = cells[2]?.textContent.toLowerCase() || '';
+                const confText = cells[3]?.textContent || '';
+                
+                const typeMatch = type.includes(typeFilter);
+                const timeMatch = time.includes(timeFilter);
+                const descMatch = desc.includes(descFilter.toLowerCase());
+                
+                // Parse confidence value (e.g., "85%" -> 85)
+                const confValue = parseFloat(confText.replace('%', ''));
+                let confMatch = true;
+                
+                if (confFilter) {
+                    // Check for comparison operators
+                    if (confFilter.startsWith('>=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue >= threshold;
+                    } else if (confFilter.startsWith('<=')) {
+                        const threshold = parseFloat(confFilter.substring(2).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue <= threshold;
+                    } else if (confFilter.startsWith('>')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue > threshold;
+                    } else if (confFilter.startsWith('<')) {
+                        const threshold = parseFloat(confFilter.substring(1).replace('%', ''));
+                        confMatch = !isNaN(confValue) && !isNaN(threshold) && confValue < threshold;
+                    } else {
+                        // Default: exact match or contains
+                        confMatch = confText.toLowerCase().includes(confFilter.toLowerCase());
+                    }
+                }
+                
+                if (typeMatch && timeMatch && descMatch && confMatch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Update filter status indicators
+            updateFilterStatus('uploadFilterType', typeFilter);
+            updateFilterStatus('uploadFilterTime', timeFilter);
+            updateFilterStatus('uploadFilterDescription', descFilter);
+            updateFilterStatus('uploadFilterConfidence', confFilter);
+            
+            // Update filtered count
+            const totalCount = rows.length;
+            const countEl = document.getElementById('filteredCount');
+            if (countEl) {
+                if (visibleCount < totalCount) {
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} events`;
+                    countEl.style.color = '#007bff';
+                    countEl.style.fontWeight = 'bold';
+                } else {
+                    countEl.textContent = '';
+                }
+            }
+        }
+
+        function updateFilterStatus(inputId, filterValue) {
+            const input = document.getElementById(inputId);
+            if (input) {
+                if (filterValue) {
+                    input.classList.add('filter-active');
+                } else {
+                    input.classList.remove('filter-active');
+                }
+            }
+        }
+
+        function clearAllFilters() {
+            // Clear local mode filters
+            ['filterType', 'filterTime', 'filterDescription', 'filterConfidence'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.value = '';
+                    input.classList.remove('filter-active');
+                }
+            });
+            
+            // Clear upload mode filters
+            ['uploadFilterType', 'uploadFilterTime', 'uploadFilterDescription', 'uploadFilterConfidence'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.value = '';
+                    input.classList.remove('filter-active');
+                }
+            });
+            
+            // Re-run filters to show all rows
+            filterEvents();
+            filterUploadEvents();
+            
+            console.log('[Filter] All filters cleared');
+        }
+
+        function downloadSelectedTimestamps() {
+            if (!currentAnalysisResult) return;
+            
+            // Get visible (filtered) event indices
+            const visibleIndices = getVisibleEventIndices();
+            
+            const selectedEventsList = currentAnalysisResult.events
+                .filter((e, idx) => selectedEvents.has(idx) && visibleIndices.includes(idx))
+                .map(e => {
+                    const hours = Math.floor(e.timestamp / 3600);
+                    const mins = Math.floor((e.timestamp % 3600) / 60);
+                    const secs = Math.floor(e.timestamp % 60);
+                    const timeStr = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                    
+                    if (includeShortDescription) {
+                        // Create short description (first 50 chars)
+                        const shortDesc = e.description ? e.description.substring(0, 50).replace(/[\n\r]/g, ' ').trim() : e.type;
+                        return `${timeStr} "${shortDesc}"`;
+                    } else {
+                        return timeStr;
+                    }
+                });
+            
+            const content = selectedEventsList.join('\n');
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `timestamps_${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        async function generateAndDownloadSelectedClips() {
+            if (!currentTaskId || !currentAnalysisResult) {
+                alert('No analysis data available');
+                return;
+            }
+            
+            if (selectedEvents.size === 0) {
+                alert('Please select at least one event to generate clips');
+                return;
+            }
+            
+            const btn = document.getElementById('generateDownloadBtn');
+            const originalText = btn.textContent;
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating clips...';
+            
+            try {
+                // Get visible (filtered) event indices
+                const visibleIndices = getVisibleEventIndices();
+                
+                // Get only selected AND visible events
+                const selectedEventsList = currentAnalysisResult.events
+                    .filter((e, idx) => selectedEvents.has(idx) && visibleIndices.includes(idx));
+                
+                const response = await fetch('/api/clips/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_id: currentTaskId,
+                        events: selectedEventsList
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate clips');
+                }
+                
+                const clips = data.clips || [];
+                
+                if (clips.length > 0) {
+                    btn.textContent = `⏳ Downloading ${clips.length} clips...`;
+                    
+                    // Download each clip with a small delay
+                    for (let i = 0; i < clips.length; i++) {
+                        await new Promise(resolve => setTimeout(resolve, i * 500)); // 500ms delay between downloads
+                        const a = document.createElement('a');
+                        a.href = `/api/clips/download/${clips[i].filename}`;
+                        a.download = clips[i].filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    }
+                    
+                    btn.textContent = `✅ ${clips.length} Clips Downloaded`;
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 3000);
+                } else {
+                    alert('No clips were generated');
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+                
+            } catch (error) {
+                alert('Error generating clips: ' + error.message);
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+        
+        async function generateAndDownloadHighlightReel() {
+            if (!currentTaskId || !currentAnalysisResult) {
+                alert('No analysis data available');
+                return;
+            }
+            
+            if (selectedEvents.size === 0) {
+                alert('Please select at least one event to create a highlight reel');
+                return;
+            }
+            
+            const btn = document.getElementById('highlightReelBtn');
+            const originalText = btn.textContent;
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating clips...';
+            
+            try {
+                // Get visible (filtered) event indices
+                const visibleIndices = getVisibleEventIndices();
+                
+                // Get only selected AND visible events
+                const selectedEventsList = currentAnalysisResult.events
+                    .filter((e, idx) => selectedEvents.has(idx) && visibleIndices.includes(idx));
+                
+                // Step 1: Generate clips
+                const generateResponse = await fetch('/api/clips/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_id: currentTaskId,
+                        events: selectedEventsList
+                    })
+                });
+                
+                const generateData = await generateResponse.json();
+                
+                if (!generateResponse.ok) {
+                    throw new Error(generateData.error || 'Failed to generate clips');
+                }
+                
+                const clips = generateData.clips || [];
+                
+                if (clips.length === 0) {
+                    alert('No clips were generated');
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                    return;
+                }
+                
+                btn.textContent = '⏳ Creating highlight reel...';
+                
+                // Step 2: Concatenate clips
+                const clipFilenames = clips.map(c => c.filename);
+                
+                const concatResponse = await fetch('/api/clips/concatenate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clips: clipFilenames })
+                });
+                
+                const concatData = await concatResponse.json();
+                
+                if (!concatResponse.ok) {
+                    throw new Error(concatData.error || 'Failed to create highlight reel');
+                }
+                
+                btn.textContent = '⏳ Downloading...';
+                
+                // Step 3: Auto-download the highlight reel
+                const a = document.createElement('a');
+                a.href = `/api/clips/download/${concatData.filename}`;
+                a.download = concatData.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                btn.textContent = `✅ Highlight Reel Downloaded (${clips.length} clips)`;
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 3000);
+                
+            } catch (error) {
+                alert('Error creating highlight reel: ' + error.message);
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function downloadTimestamps() {
+            if (!currentAnalysisResult) return;
+            
+            const dataStr = JSON.stringify(currentAnalysisResult, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'analysis_results.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function showClipInstructions() {
+            const instructions = `To generate clips locally using ffmpeg:
+
+1. Download and install ffmpeg: https://ffmpeg.org/download.html
+
+2. Use this command for each event:
+   ffmpeg -i video.mp4 -ss START_TIME -t DURATION -c copy clip.mp4
+
+Example for event at 2:15 (135 seconds):
+   ffmpeg -i myvideo.mp4 -ss 130 -t 10 -c copy goal_2min15s.mp4
+
+3. The downloaded JSON file contains all event timestamps!
+
+4. For batch processing, create a script that loops through the timestamps.`;
+
+            alert(instructions);
+        }
+        
         
         // Load current configuration
         async function loadConfig() {
             try {
                 const response = await fetch('/api/config');
                 currentConfig = await response.json();
+                console.log('Config loaded:', {
+                    sport: currentConfig.sport,
+                    frame_interval: currentConfig.sport_presets?.[currentConfig.sport]?.frame_interval,
+                    max_frames: currentConfig.sport_presets?.[currentConfig.sport]?.max_frames
+                });
             } catch (error) {
                 console.error('Failed to load config:', error);
             }
@@ -171,8 +1596,28 @@
             const progressStep = document.getElementById('progressStep');
             const progressLog = document.getElementById('progressLog');
             
+            // Build instructions from checkboxes and text field
+            const selectedEventTypes = Array.from(document.querySelectorAll('.upload-event-type-checkbox:checked'))
+                .map(cb => cb.value);
+            const additionalInstructions = instructions.value.trim();
+            
+            let finalInstructions = '';
+            if (selectedEventTypes.length > 0) {
+                finalInstructions = `Find all ${selectedEventTypes.join(', ')}`;
+            }
+            if (additionalInstructions) {
+                finalInstructions = finalInstructions 
+                    ? `${finalInstructions}. ${additionalInstructions}` 
+                    : additionalInstructions;
+            }
+            
+            if (!finalInstructions) {
+                alert('Please select at least one event type or provide instructions');
+                return;
+            }
+            
             console.log('Video file:', videoFile ? videoFile.name : 'NONE');
-            console.log('Instructions:', instructions.value);
+            console.log('Instructions:', finalInstructions);
             console.log('Current config:', currentConfig);
             
             if (!videoFile) {
@@ -185,21 +1630,36 @@
             btn.disabled = true;
             videoFileInput.disabled = true;
             instructions.readOnly = true;
+            document.getElementById('timeFrom').disabled = true;
+            document.getElementById('timeTo').disabled = true;
+            document.querySelectorAll('.upload-event-type-checkbox').forEach(cb => cb.disabled = true);
+            
             btn.textContent = '⏳ Analyzing video...';
             results.classList.add('hidden');
             progressContainer.classList.remove('hidden');
             progressLog.innerHTML = '';
             progressBar.style.width = '0%';
             progressBar.textContent = '0%';
+            document.getElementById('stopBtn').style.display = 'block';
+            document.getElementById('stopBtn').disabled = false;
+            
+            // Start timer
+            startAnalysisTimer(false);
             
             try {
                 console.log('Step 1: Preparing to upload video...');
                 // Step 1: Start processing and get task ID
                 const formData = new FormData();
                 formData.append('video', videoFile);
-                formData.append('instructions', instructions.value);
+                formData.append('instructions', finalInstructions);
                 formData.append('backend', currentConfig.llm_backend || 'simulated');
                 formData.append('sport', currentConfig.sport || 'floorball');
+                
+                // Add time range filters if specified
+                const fromSeconds = parseTimeToSeconds(document.getElementById('timeFrom').value);
+                const toSeconds = parseTimeToSeconds(document.getElementById('timeTo').value);
+                if (fromSeconds !== null) formData.append('time_from', fromSeconds);
+                if (toSeconds !== null) formData.append('time_to', toSeconds);
                 
                 console.log('Sending POST to /api/analyze/start with:', {
                     videoName: videoFile.name,
@@ -246,9 +1706,13 @@
                         eventSource.close();
                         currentEventSource = null;
                         progressContainer.classList.add('hidden');
+                        stopAnalysisTimer(false);
                         btn.disabled = false;
                         videoFileInput.disabled = false;
                         instructions.readOnly = false;
+                        document.getElementById('timeFrom').disabled = false;
+                        document.getElementById('timeTo').disabled = false;
+                        document.querySelectorAll('.upload-event-type-checkbox').forEach(cb => cb.disabled = false);
                         btn.textContent = '🔍 Analyze Video';
                         
                         // Show error with details
@@ -275,10 +1739,17 @@
                         progressContainer.classList.add('hidden');
                         currentAnalysisResult = update.result;
                         displayResults(update.result);
+                        stopAnalysisTimer(false);
                         btn.disabled = false;
                         videoFileInput.disabled = false;
                         instructions.readOnly = false;
+                        document.getElementById('timeFrom').disabled = false;
+                        document.getElementById('timeTo').disabled = false;
+                        document.querySelectorAll('.upload-event-type-checkbox').forEach(cb => cb.disabled = false);
                         btn.textContent = '🔍 Analyze Video';
+                        
+                        // Hide stop button when analysis is complete
+                        document.getElementById('stopBtn').style.display = 'none';
                         
                         // Reset stop button for next analysis
                         const stopBtn = document.getElementById('stopBtn');
@@ -364,6 +1835,47 @@
                 stopBtn.textContent = '⏳ Stopping...';
             }
         }
+        
+        function resetUploadMode() {
+            // Stop analysis if running
+            stopAnalysis();
+            
+            // Close SSE connection
+            if (currentEventSource) {
+                currentEventSource.close();
+                currentEventSource = null;
+            }
+            
+            // Clear video
+            const videoInput = document.getElementById('videoFile');
+            videoInput.value = '';
+            
+            // Reset checkboxes - check only goals
+            document.querySelectorAll('.upload-event-type-checkbox').forEach(cb => {
+                cb.checked = (cb.value === 'goal');
+            });
+            
+            // Clear instructions
+            document.getElementById('instructions').value = '';
+            
+            // Reset progress
+            document.getElementById('progressContainer').classList.add('hidden');
+            document.getElementById('progressLog').innerHTML = '';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            
+            // Reset buttons
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = '🔍 Analyze Video';
+            document.getElementById('stopBtn').style.display = 'none';
+            
+            // Hide results
+            document.getElementById('results').classList.add('hidden');
+            currentAnalysisResult = null;
+            currentTaskId = null;
+            selectedEvents.clear();
+        }
 
         
         async function generateClips() {
@@ -409,7 +1921,7 @@
                     
                     const controlsHtml = `
                         <div class="clips-controls">
-                            <button class="select-all-btn" onclick="toggleSelectAll()">Select All</button>
+                            <button class="select-all-btn" onclick="toggleClipSelectAll(this)">Select All</button>
                             <button class="highlight-reel-btn" onclick="createHighlightReel()" id="highlightReelBtn">
                                 🎬 Create Highlight Reel
                             </button>
@@ -433,7 +1945,7 @@
             }
         }
         
-        function toggleSelectAll() {
+        function toggleClipSelectAll(btn) {
             const checkboxes = document.querySelectorAll('.clip-checkbox');
             const allChecked = Array.from(checkboxes).every(cb => cb.checked);
             
@@ -441,7 +1953,6 @@
                 cb.checked = !allChecked;
             });
             
-            const btn = event.target;
             btn.textContent = allChecked ? 'Select All' : 'Deselect All';
         }
         
@@ -523,9 +2034,10 @@
             // Show timestamps for clipping
             if (data.timestamps && data.timestamps.length > 0) {
                 const timestampsList = data.timestamps.map(t => {
-                    const mins = Math.floor(t / 60);
+                    const hours = Math.floor(t / 3600);
+                    const mins = Math.floor((t % 3600) / 60);
                     const secs = Math.floor(t % 60);
-                    return `${mins}:${String(secs).padStart(2, '0')}`;
+                    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
                 }).join(', ');
                 
                 document.getElementById('metrics').innerHTML += `
@@ -540,7 +2052,11 @@
             if (data.events.length > 0) {
                 const eventsHtml = `
                     <h3>Detected Events</h3>
-                    <table class="events-table">
+                    <div style="margin-bottom: 12px;">
+                        <button onclick="clearAllFilters()" class="clear-filters-btn">🔄 Clear All Filters</button>
+                        <span id="filteredCount" style="margin-left: 12px; font-size: 13px; color: #666;"></span>
+                    </div>
+                    <table class="events-table" id="uploadEventsTable">
                         <thead>
                             <tr>
                                 <th>Type</th>
@@ -548,8 +2064,14 @@
                                 <th>Description</th>
                                 <th>Confidence</th>
                             </tr>
+                            <tr class="filter-row">
+                                <th><input type="text" class="filter-input" id="uploadFilterType" placeholder="Filter type..." oninput="filterUploadEvents()"></th>
+                                <th><input type="text" class="filter-input" id="uploadFilterTime" placeholder="Filter time..." oninput="filterUploadEvents()"></th>
+                                <th><input type="text" class="filter-input" id="uploadFilterDescription" placeholder="Filter description..." oninput="filterUploadEvents()"></th>
+                                <th><input type="text" class="filter-input" id="uploadFilterConfidence" placeholder="Filter..." oninput="filterUploadEvents()"></th>
+                            </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="uploadEventsTableBody">
                             ${data.events.map(e => `
                                 <tr>
                                     <td><span class="event-badge event-${e.type}">${e.type.toUpperCase()}</span></td>
