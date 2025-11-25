@@ -105,6 +105,9 @@ def analyze_frames():
         elif backend_name == 'gemini':
             api_key = os.getenv('GEMINI_API_KEY', '')
             model = config.gemini_model
+        elif backend_name == 'perplexity':
+            api_key = os.getenv('PERPLEXITY_API_KEY', '')
+            model = getattr(config, 'perplexity_model', 'sonar')
         
         vision_backend = get_vision_backend(backend_name, api_key, model)
         
@@ -155,6 +158,8 @@ def analyze_frames():
             max_workers = max_workers_config if max_workers_config is not None else calculated_workers
         elif backend_name == 'gemini':
             max_workers = getattr(config, 'max_workers_gemini', 4)
+        elif backend_name == 'perplexity':
+            max_workers = getattr(config, 'max_workers_perplexity', 4)
         
         # Ensure max_workers is valid and cap it by number of chunks
         max_workers = max(1, int(max_workers)) if isinstance(max_workers, (int, float)) else 1
@@ -259,6 +264,9 @@ def analyze_frames_stream():
             elif backend_name == 'gemini':
                 api_key = os.getenv('GEMINI_API_KEY', '')
                 model = config.gemini_model
+            elif backend_name == 'perplexity':
+                api_key = os.getenv('PERPLEXITY_API_KEY', '')
+                model = getattr(config, 'perplexity_model', 'sonar')
             
             vision_backend = get_vision_backend(backend_name, api_key, model)
             
@@ -300,6 +308,8 @@ def analyze_frames_stream():
                 max_workers = max_workers_config if max_workers_config is not None else calculated_workers
             elif backend_name == 'gemini':
                 max_workers = getattr(config, 'max_workers_gemini', 4)
+            elif backend_name == 'perplexity':
+                max_workers = getattr(config, 'max_workers_perplexity', 4)
             
             max_workers = max(1, int(max_workers)) if isinstance(max_workers, (int, float)) else 1
             max_workers = min(max_workers, len(chunk_tasks))
@@ -478,6 +488,15 @@ def analyze_start():
                     if not api_key:
                         logger.error("GEMINI_API_KEY not set in environment")
                         raise ValueError("GEMINI_API_KEY not set in .env file. Please add your API key.")
+                elif backend_name == 'perplexity':
+                    api_key = os.getenv('PERPLEXITY_API_KEY', '')
+                    model = getattr(config, 'perplexity_model', 'sonar')
+                    logger.info(f"Using Perplexity model: {model}")
+                    
+                    # Check if API key is set
+                    if not api_key:
+                        logger.error("PERPLEXITY_API_KEY not set in environment")
+                        raise ValueError("PERPLEXITY_API_KEY not set in .env file. Please add your API key.")
                 
                 vision_backend = get_vision_backend(backend_name, api_key, model)
                 logger.info(f"Backend initialized: {type(vision_backend).__name__}")

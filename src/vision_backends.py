@@ -913,13 +913,135 @@ Analyze ALL frames carefully. Report EVERY event you see with clear evidence. On
             return []
 
 
+class PerplexityVisionBackend(VisionBackendMixin):
+    """Perplexity Vision backend for video analysis using OpenAI-compatible API."""
+    
+    def __init__(self, api_key: str, model: str = "sonar"):
+        self.api_key = api_key
+        self.model = model
+        try:
+            from openai import OpenAI
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url="https://api.perplexity.ai",
+                timeout=120.0,
+                max_retries=3
+            )
+        except ImportError:
+            raise ImportError("openai package required: pip install openai")
+    
+    def _analyze_frames_impl(self, frames: List[str], instructions: str, sport: str, frame_interval: float, max_frames: int = 20, time_offset: float = 0.0) -> List[Dict[str, Any]]:
+        """Analyze frames using Perplexity Vision API.
+        
+        Args:
+            frames: List of file paths OR base64-encoded strings
+        """
+        from src.video_tools import encode_image_base64
+        from src.config_manager import SPORT_PRESETS
+        import os
+        
+        # Get sport-specific hint from config
+        sport_preset = SPORT_PRESETS.get(sport) or SPORT_PRESETS.get('floorball')
+        if sport_preset is None:
+            raise ValueError(f"Sport preset not found for {sport}")
+        hint = getattr(sport_preset, 'hint', f"Analyze this {sport} game footage.")
+        
+        system_prompt = f"""You are an expert {sport} video analyst with years of experience identifying key game events.
+
+## Your Task
+Analyze the provided video frames to find ONLY: {instructions}
+
+IMPORTANT: Only detect and report the specific event types mentioned in the instructions above. Do not report other event types.
+
+## Critical Visual Cues for {sport.title()}
+{hint}
+
+## Output Format (Critical - Follow Exactly)
+
+For EACH event you identify, output valid JSON on a single line:
+{{"timestamp": 125.5, "type": "goal", "description": "Player #7 shoots from center, ball enters top right corner of goal, goalkeeper dives but misses, teammates celebrate", "confidence": 0.95}}
+
+**Valid event types**: goal, shot, save, penalty, assist, timeout, turnover
+
+## Boundaries & Confidence Levels
+- ✅ HIGH CONFIDENCE (0.85-1.0): Multiple clear visual indicators present
+- ⚠️ MEDIUM CONFIDENCE (0.7-0.85): Most indicators present but some uncertainty
+- ⚠️ LOW CONFIDENCE (0.5-0.7): Limited visual evidence
+- 🚫 NEVER: Output explanatory text, only JSON objects
+- 🚫 NEVER: Report events without clear visual evidence
+- 🚫 NEVER: Report event types not mentioned in the instructions
+
+Analyze ALL frames carefully. Report EVERY event you see that matches the requested types with clear evidence."""
+        
+        # Sample frames based on max_frames setting
+        sample_frames = frames[::max(1, len(frames) // max_frames)]
+        
+        messages = []
+        for i, frame_data in enumerate(sample_frames):
+            timestamp = i * frame_interval * (len(frames) / len(sample_frames))
+            
+            # Check if frame_data is a file path or base64 string
+            if os.path.exists(frame_data):
+                # It's a file path, encode it
+                base64_image = encode_image_base64(frame_data)
+            else:
+                # It's already base64-encoded
+                base64_image = frame_data
+            
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Frame at {timestamp:.1f}s:"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                ]
+            })
+        
+        # Add system instruction at the end
+        messages.append({
+            "role": "user",
+            "content": system_prompt
+        })
+        
+        try:
+            import logging
+            logger = logging.getLogger('floorball_llm')
+            logger.info(f"Perplexity Vision: Analyzing {len(sample_frames)} frames (sampled from {len(frames)} total) with model {self.model}")
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=4000,
+                temperature=0.3
+            )
+            
+            content = response.choices[0].message.content
+            logger.info(f"Perplexity Vision raw response length: {len(content)} chars")
+            logger.debug(f"Perplexity Vision response: {content[:500]}...")
+            
+            events = self.parse_events_from_text(content)
+            logger.info(f"Perplexity Vision: Parsed {len(events)} events from response")
+            
+            # Apply time offset for chunked processing
+            if time_offset > 0:
+                for event in events:
+                    event['timestamp'] += time_offset
+            
+            return events
+        
+        except Exception as e:
+            print(f"Perplexity Vision error: {e}")
+            return []
+
+
 def get_vision_backend(backend_name: str, api_key: Optional[str] = None, model: Optional[str] = None):
     """Factory function to get vision backend by name."""
     if backend_name == 'openai' and api_key:
         return OpenAIVisionBackend(api_key, model or "gpt-4o-mini")
     elif backend_name == 'gemini' and api_key:
         return GeminiVisionBackend(api_key, model or "gemini-1.5-flash")
+    elif backend_name == 'perplexity' and api_key:
+        return PerplexityVisionBackend(api_key, model or "sonar")
     elif backend_name == 'simulated' or not api_key:
         return SimulatedVisionBackend()
     else:
-        raise ValueError(f"Vision backend '{backend_name}' not supported. Use 'openai', 'gemini', or 'simulated'.")
+        raise ValueError(f"Vision backend '{backend_name}' not supported. Use 'openai', 'gemini', 'perplexity', or 'simulated'.")

@@ -9,7 +9,7 @@
 # ============================================================
 
 # Which LLM backend to use
-# Options: simulated, openai, gemini, anthropic, huggingface, ollama
+# Options: simulated, openai, gemini, anthropic, huggingface, ollama, perplexity
 # Edit only the block that matches your chosen backend and leave others commented to avoid confusion.
 llm_backend: openai
 
@@ -46,6 +46,11 @@ openai_rate_limit_rpm: 500     # Requests per minute limit
 # Options: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-flash-8b
 # Note: Don't use -latest suffix, just the base model name
 # gemini_model: gemini-2.5-flash
+
+# Perplexity model selection
+# Options: sonar, sonar-pro, sonar-reasoning, sonar-reasoning-pro
+# Note: sonar models support online search and vision capabilities
+# perplexity_model: sonar
 
 # Ollama configuration
 # ollama_endpoint: http://localhost:11434

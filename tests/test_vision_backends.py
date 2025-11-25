@@ -204,3 +204,45 @@ def test_get_vision_backend_gemini_without_key():
     """Test that Gemini backend falls back to simulated without API key."""
     backend = get_vision_backend('gemini', api_key=None)
     assert isinstance(backend, SimulatedVisionBackend)
+
+
+def test_perplexity_vision_backend_initialization():
+    """Test that Perplexity backend initializes correctly."""
+    try:
+        from openai import OpenAI
+        from src.vision_backends import PerplexityVisionBackend
+        
+        # Test initialization with API key
+        backend = PerplexityVisionBackend(api_key='test-key', model='sonar')
+        assert backend.api_key == 'test-key'
+        assert backend.model == 'sonar'
+        
+        # Test default model
+        backend = PerplexityVisionBackend(api_key='test-key')
+        assert backend.model == 'sonar'
+        
+    except ImportError:
+        pytest.skip("openai not installed")
+
+
+def test_get_vision_backend_with_perplexity():
+    """Test factory creates Perplexity backend correctly."""
+    try:
+        from openai import OpenAI
+        from src.vision_backends import PerplexityVisionBackend
+        
+        backend = get_vision_backend('perplexity', api_key='test-key', model='sonar-pro')
+        
+        # Should return Perplexity backend with API key
+        assert isinstance(backend, PerplexityVisionBackend)
+        assert backend.api_key == 'test-key'
+        assert backend.model == 'sonar-pro'
+        
+    except ImportError:
+        pytest.skip("openai not installed")
+
+
+def test_get_vision_backend_perplexity_without_key():
+    """Test that Perplexity backend falls back to simulated without API key."""
+    backend = get_vision_backend('perplexity', api_key=None)
+    assert isinstance(backend, SimulatedVisionBackend)
