@@ -9,7 +9,7 @@
 # ============================================================
 
 # Which LLM backend to use
-# Options: simulated, openai, gemini, anthropic, huggingface, ollama
+# Options: simulated, openai, gemini, anthropic, huggingface, ollama, perplexity
 llm_backend: simulated
 
 # Sport type for analysis
@@ -45,6 +45,11 @@ huggingface_model: meta-llama/Llama-3.2-3B-Instruct
 # Options: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-flash-8b
 # Note: Don't use -latest suffix, just the base model name
 # gemini_model: gemini-2.5-flash
+
+# Perplexity model selection
+# Options: sonar, sonar-pro, sonar-reasoning, sonar-reasoning-pro
+# Note: sonar models support online search and vision capabilities
+# perplexity_model: sonar
 
 # Ollama configuration
 ollama_endpoint: http://localhost:11434

@@ -93,6 +93,8 @@ class AppConfig:
     ollama_model: str = "llama3.2"
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-1.5-flash"
+    perplexity_api_key: Optional[str] = None
+    perplexity_model: str = "sonar"
     
     # Processing settings
     sport: str = "floorball"
@@ -107,6 +109,8 @@ class AppConfig:
     max_workers_openai: Optional[int] = None
     # Gemini has higher rate limits, can handle more workers
     max_workers_gemini: int = 4
+    # Perplexity rate limits, moderate parallelism
+    max_workers_perplexity: int = 4
     # Delay between retries when hitting rate limits (seconds)
     rate_limit_retry_delay: float = 40.0
     # Maximum retries for rate-limited requests
@@ -233,6 +237,8 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         config.huggingface_api_key = os.getenv("HUGGINGFACE_API_KEY")
     if os.getenv("GEMINI_API_KEY"):
         config.gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if os.getenv("PERPLEXITY_API_KEY"):
+        config.perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
     
     # Allow environment override for deployment (optional)
     if os.getenv("LLM_BACKEND"):

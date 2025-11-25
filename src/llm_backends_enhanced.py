@@ -400,6 +400,115 @@ except ImportError:
     GeminiBackend = None
 
 
+# Perplexity Backend (OpenAI-compatible API)
+try:
+    from openai import OpenAI  # type: ignore
+    
+    @dataclass
+    class PerplexityBackend(LLMBackendBase):
+        api_key: str
+        model: str = "sonar"
+        max_retries: int = 3
+        timeout: float = 60.0
+        
+        def __post_init__(self):
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url="https://api.perplexity.ai",
+                timeout=self.timeout,
+                max_retries=self.max_retries
+            )
+        
+        def health_check(self) -> bool:
+            try:
+                # Simple health check by making a minimal request
+                return self.client is not None
+            except Exception:
+                return False
+        
+        def analyze_commentary(self, text: str) -> Dict[str, Any]:
+            start = time.time()
+            
+            system_prompt = """Extract sports events from the commentary. For each event provide:
+- type (goal, assist, shot, save, penalty, timeout, turnover, etc.)
+- timestamp (seconds from start)
+- description
+- confidence (0-1)
+- team (if mentioned)
+- player (if mentioned)
+
+Return JSON array of events."""
+            
+            try:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": text}
+                    ],
+                    temperature=0.3
+                )
+                
+                processing_ms = int((time.time() - start) * 1000)
+                content = resp.choices[0].message.content
+                
+                # Try to parse JSON from response
+                try:
+                    # Extract JSON from markdown code blocks if present
+                    if '```json' in content:
+                        content = content.split('```json')[1].split('```')[0].strip()
+                    elif '```' in content:
+                        content = content.split('```')[1].split('```')[0].strip()
+                    
+                    parsed = json.loads(content)
+                    if isinstance(parsed, list):
+                        events = parsed
+                    elif isinstance(parsed, dict) and "events" in parsed:
+                        events = parsed["events"]
+                    else:
+                        events = []
+                except json.JSONDecodeError:
+                    events = []
+                
+                # Calculate cost (Perplexity pricing)
+                # sonar: $1/1M input, $1/1M output
+                # sonar-pro: $3/1M input, $15/1M output
+                usage = resp.usage
+                input_tokens = usage.prompt_tokens if usage else 0
+                output_tokens = usage.completion_tokens if usage else 0
+                
+                model_lower = self.model.lower()
+                if 'pro' in model_lower:
+                    cost_usd = (input_tokens * 3 / 1_000_000) + (output_tokens * 15 / 1_000_000)
+                else:  # sonar (default)
+                    cost_usd = (input_tokens * 1 / 1_000_000) + (output_tokens * 1 / 1_000_000)
+                
+                return LLMResult(
+                    events=events,
+                    meta={
+                        "model": self.model,
+                        "processing_ms": processing_ms,
+                        "cost_usd": cost_usd,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "input_chars": len(text)
+                    }
+                ).model_dump()
+                
+            except Exception as e:
+                return LLMResult(
+                    events=[],
+                    meta={
+                        "model": self.model,
+                        "error": str(e),
+                        "processing_ms": int((time.time() - start) * 1000)
+                    }
+                ).model_dump()
+
+except ImportError:
+    PerplexityBackend = None
+
+
 # Hugging Face Inference API
 @dataclass
 class HuggingFaceBackend(LLMBackendBase):
